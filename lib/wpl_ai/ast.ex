@@ -534,7 +534,7 @@ defmodule WplAi.AST do
             name: String.t() | nil,
             timing: NutritionTiming.t() | nil,
             macros: Macros.t() | nil,
-            calories: {number(), number()} | nil,
+            calories: {number(), number(), String.t()} | nil,
             suggestions: [String.t()] | nil,
             meta: map()
           }
@@ -557,7 +557,7 @@ defmodule WplAi.AST do
     @moduledoc "Macronutrient targets"
     defstruct [:protein, :carbs, :fat]
 
-    @type range :: {number(), number()} | {:max, number()}
+    @type range :: {number(), number(), String.t()} | {:max, number(), String.t()}
 
     @type t :: %__MODULE__{
             protein: range() | nil,

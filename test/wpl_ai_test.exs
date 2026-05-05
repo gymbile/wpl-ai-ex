@@ -414,9 +414,9 @@ defmodule WplAiTest do
 
       assert %AST.Nutrition{} = nutrition
       assert nutrition.category == "meal"
-      assert nutrition.macros.protein == {20, 30}
-      assert nutrition.macros.carbs == {30, 40}
-      assert nutrition.macros.fat == {10, 15}
+      assert nutrition.macros.protein == {20, 30, "g"}
+      assert nutrition.macros.carbs == {30, 40, "g"}
+      assert nutrition.macros.fat == {10, 15, "g"}
     end
   end
 

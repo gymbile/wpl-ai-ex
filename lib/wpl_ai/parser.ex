@@ -1894,14 +1894,14 @@ defmodule WplAi.Parser do
         state = skip_optional_bare_word(state)
         macros = Map.get(attrs, :macros) || %AST.Macros{}
         key = meal_macro_key(name)
-        macros = Map.put(macros, key, {grams, grams})
+        macros = Map.put(macros, key, {grams, grams, "g"})
         parse_meal_body(state, Map.put(attrs, :macros, macros))
 
       {tag, "CALORIES", _} when tag in [:keyword, :bare_word] ->
         state = advance(state)
         {:ok, kcal, state} = expect_number(state)
         state = skip_optional_bare_word(state)
-        parse_meal_body(state, Map.put(attrs, :calories, {kcal, kcal}))
+        parse_meal_body(state, Map.put(attrs, :calories, {kcal, kcal, "kcal"}))
 
       {:dedent, _, _} ->
         {attrs, advance(state)}
@@ -2501,12 +2501,27 @@ defmodule WplAi.Parser do
 
       {:number, value, _} ->
         state = advance(state)
+
+        # Check for `N% bw` / `N% bodyweight` / `N% rm` forms (percent sign
+        # followed by a unit bareword).
+        {percent_syntax, state} =
+          case current_token(state) do
+            {:percent, _, _} -> {true, advance(state)}
+            _ -> {false, state}
+          end
+
         {:ok, unit, state} = expect_bare_word(state)
 
         type =
-          case unit do
-            "percentage_1rm" -> :percentage_1rm
-            _ -> :absolute
+          cond do
+            unit in ["bw", "bodyweight", "percentage_bodyweight"] ->
+              :percentage_bodyweight
+
+            percent_syntax or unit in ["rm", "1rm", "percentage_1rm"] ->
+              :percentage_1rm
+
+            true ->
+              :absolute
           end
 
         weight = %AST.Weight{type: type, value: value, unit: unit}
@@ -2789,7 +2804,27 @@ defmodule WplAi.Parser do
         {:ok, min, state} = expect_number(state)
         state = expect_range(state)
         {:ok, max, state} = expect_number(state)
-        parse_nutrition_body(state, Map.put(attrs, :calories, {trunc(min), trunc(max)}))
+
+        {cal_unit, state} =
+          case current_token(state) do
+            {:bare_word, u, _} when u in ["kcal", "kcal_per_kg", "multiplier_of_tdee"] ->
+              {u, advance(state)}
+
+            {:keyword, u, _} when u in ["kcal", "kcal_per_kg", "multiplier_of_tdee"] ->
+              {u, advance(state)}
+
+            _ ->
+              {"kcal", state}
+          end
+
+        calories =
+          if cal_unit == "multiplier_of_tdee" or cal_unit == "kcal_per_kg" do
+            {min, max, cal_unit}
+          else
+            {trunc(min), trunc(max), cal_unit}
+          end
+
+        parse_nutrition_body(state, Map.put(attrs, :calories, calories))
 
       {:keyword, "suggestions", _} ->
         state = advance(state)
@@ -2835,18 +2870,27 @@ defmodule WplAi.Parser do
     end
   end
 
+  @macro_units ~w(g g_per_kg)
+
   defp parse_macro_range(state) do
     {:ok, min, state} = expect_number(state)
     state = expect_range(state)
     {:ok, max, state} = expect_number(state)
-    # Skip "g" unit
-    state =
+
+    {unit, state} =
       case current_token(state) do
-        {:bare_word, "g", _} -> advance(state)
-        _ -> state
+        {:bare_word, u, _} when u in @macro_units ->
+          {u, advance(state)}
+
+        _ ->
+          {"g", state}
       end
 
-    {:ok, {trunc(min), trunc(max)}, state}
+    if unit == "g_per_kg" do
+      {:ok, {min, max, unit}, state}
+    else
+      {:ok, {trunc(min), trunc(max), unit}, state}
+    end
   end
 
   defp parse_fat_range(state) do
@@ -2855,13 +2899,17 @@ defmodule WplAi.Parser do
         state = advance(state)
         {:ok, max, state} = expect_number(state)
 
-        state =
+        {unit, state} =
           case current_token(state) do
-            {:bare_word, "g", _} -> advance(state)
-            _ -> state
+            {:bare_word, u, _} when u in @macro_units ->
+              {u, advance(state)}
+
+            _ ->
+              {"g", state}
           end
 
-        {:ok, {:max, trunc(max)}, state}
+        value = if unit == "g_per_kg", do: max, else: trunc(max)
+        {:ok, {:max, value, unit}, state}
 
       _ ->
         parse_macro_range(state)

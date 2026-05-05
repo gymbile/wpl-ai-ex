@@ -827,8 +827,8 @@ defmodule WplAi.Compiler do
 
     prescription =
       case nutrition.calories do
-        {min, max} ->
-          Map.put(prescription, "calories", %{"min" => min, "max" => max})
+        {min, max, unit} ->
+          Map.put(prescription, "calories", %{"min" => min, "max" => max, "unit" => unit})
 
         _ ->
           prescription
@@ -1109,6 +1109,14 @@ defmodule WplAi.Compiler do
     %{"type" => "bodyweight"}
   end
 
+  defp compile_weight(%AST.Weight{type: :percentage_bodyweight, value: value}) do
+    %{"type" => "percentage_bodyweight", "value" => value, "unit" => "%"}
+  end
+
+  defp compile_weight(%AST.Weight{type: :percentage_1rm, value: value, unit: unit}) do
+    %{"type" => "percentage_1rm", "value" => value, "unit" => unit}
+  end
+
   defp compile_weight(%AST.Weight{value: value, unit: unit}) do
     %{"type" => "absolute", "value" => value, "unit" => unit}
   end
@@ -1138,20 +1146,32 @@ defmodule WplAi.Compiler do
 
     compiled =
       case macros.protein do
-        {min, max} -> Map.put(compiled, "protein", %{"min" => min, "max" => max, "unit" => "g"})
-        _ -> compiled
+        {min, max, unit} ->
+          Map.put(compiled, "protein", %{"min" => min, "max" => max, "unit" => unit})
+
+        _ ->
+          compiled
       end
 
     compiled =
       case macros.carbs do
-        {min, max} -> Map.put(compiled, "carbs", %{"min" => min, "max" => max, "unit" => "g"})
-        _ -> compiled
+        {min, max, unit} ->
+          Map.put(compiled, "carbs", %{"min" => min, "max" => max, "unit" => unit})
+
+        _ ->
+          compiled
       end
 
     compiled =
       case macros.fat do
-        {min, max} -> Map.put(compiled, "fat", %{"min" => min, "max" => max, "unit" => "g"})
-        _ -> compiled
+        {:max, max, unit} ->
+          Map.put(compiled, "fat", %{"max" => max, "unit" => unit})
+
+        {min, max, unit} ->
+          Map.put(compiled, "fat", %{"min" => min, "max" => max, "unit" => unit})
+
+        _ ->
+          compiled
       end
 
     compiled
