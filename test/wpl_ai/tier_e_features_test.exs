@@ -66,7 +66,11 @@ defmodule WplAi.TierEFeaturesTest do
 
   describe "Feature 1 — Contraindication severity + require_clearance (DSL)" do
     test "parses severity high and require_clearance action from new DSL" do
-      src = with_requires("  contraindication high_blood_pressure severity high action require_clearance\n")
+      src =
+        with_requires(
+          "  contraindication high_blood_pressure severity high action require_clearance\n"
+        )
+
       assert {:ok, json} = WplAi.to_wpl(src)
       contraindications = json["plan"]["requirements"]["contraindications"]
       ci = List.first(contraindications)
@@ -160,7 +164,9 @@ defmodule WplAi.TierEFeaturesTest do
 
   describe "Feature 3 — ExercisePrescription.to_failure" do
     test "emits to_failure: true when modifier is present" do
-      src = with_main_block("          bench_press 3x6 weight 80% rm to_failure rest 120 seconds\n")
+      src =
+        with_main_block("          bench_press 3x6 weight 80% rm to_failure rest 120 seconds\n")
+
       assert {:ok, json} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["to_failure"] == true

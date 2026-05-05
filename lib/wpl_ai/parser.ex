@@ -665,7 +665,8 @@ defmodule WplAi.Parser do
               state = advance(state)
 
               case current_token(state) do
-                {tag, level, _} when tag in [:keyword, :bare_word] and level in ["low", "moderate", "high"] ->
+                {tag, level, _}
+                when tag in [:keyword, :bare_word] and level in ["low", "moderate", "high"] ->
                   {String.to_atom(level), advance(state)}
 
                 _ ->

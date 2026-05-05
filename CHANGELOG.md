@@ -7,6 +7,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-05-05
+
+### Added
+- **`Contraindication.severity + require_clearance`** (schema v1.6.0) — extends the
+  contraindication DSL to `contraindication <name> [severity <low|moderate|high>] [action <action>]`
+  where action now includes `require_clearance`. The old arrow form (`contraindication <name> -> <action>`)
+  is preserved for back-compat. Compiler emits `severity` only when present.
+- **`Reps.amrap`** (schema v1.6.0) — DSL: `<exercise> NxAMRAP` (compact) or `Nx amrap` (space-separated,
+  case-insensitive). Compiler emits `prescription.reps: { amrap: true }`. Sets count is preserved from N.
+- **`ExercisePrescription.to_failure`** (schema v1.6.0) — optional modifier `to_failure` in the
+  exercise modifier chain. Compiler emits `prescription.to_failure: true` when present; field omitted otherwise.
+- **`Weight.metric`** qualifier (schema v1.6.0) — optional `metric <1rm|e1rm|training_max|daily_max>`
+  after a `weight N% rm` spec. Compiler emits `weight.metric: "<canonical>"` (e.g. `"1RM"`, `"e1RM"`,
+  `"training_max"`, `"daily_max"`). Omitted when not specified (back-compat).
+- **`RecoveryExercise` extensions** (schema v1.6.0) — optional modifiers on recovery exercise lines:
+  `modality <enum>` (7 values: `static_stretch | dynamic_stretch | pnf | smr_foam_roll | smr_ball | breathwork | mobility_drill`),
+  `intensity <1-10>` → emits `intensity_rpe`, `body <token>` → emits `body_part`.
+  Optional indented `pnf <Ns> contract <Ns> relax <int> contractions` continuation line emits
+  `{ contraction_seconds, relax_seconds, contractions }`. Recovery exercises now compiled under
+  `prescription.exercises` to match TS schema.
+- **Checkpoint typed `MeasurementSpec`** (schema v1.6.0) — `measure:` lists now accept bare metric
+  tokens (emitting `{ metric: "<value>" }`) and `<metric> questionnaire <enum> [note "text"]`
+  (emitting full typed spec). Quoted strings preserved as plain strings (back-compat). Added support
+  for TS-style inline `CHECKPOINT "Name":` blocks with `at N weeks` trigger form.
+- **Cardio `intensity.target.min_bpm/max_bpm`** (schema v1.6.0) — `intensity bpm N..M` now compiles
+  to `prescription.intensity: { type: "bpm", target: { min_bpm: N, max_bpm: M } }`.
+- **Emitted `version` bumped to `"1.6.0"`** — compiler now emits `"version": "1.6.0"` in all compiled plans.
+
 ## [1.5.0] — 2026-05-04
 
 ### Added
