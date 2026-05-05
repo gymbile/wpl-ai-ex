@@ -114,6 +114,14 @@ defmodule WplAi.Lexer do
     pattern
     accumulation intensification realization deload base build peak transition
     subplan
+    severity low moderate high require_clearance
+    to_failure
+    metric
+    modality static_stretch dynamic_stretch smr_foam_roll smr_ball breathwork mobility_drill
+    intensity body pnf contract relax contractions
+    questionnaire note
+    phq9 gad7 ipaq_short ipaq_long psqi pss10 borg_cr10 rpe_session
+    CHECKPOINT
   )a
 
   @doc """

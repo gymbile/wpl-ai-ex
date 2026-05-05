@@ -326,6 +326,13 @@ defmodule WplAi.Compiler do
       "action" => to_string(contra.action || :exclude)
     }
 
+    compiled =
+      if contra.severity do
+        Map.put(compiled, "severity", to_string(contra.severity))
+      else
+        compiled
+      end
+
     if contra.affects && contra.affects != [] do
       Map.put(compiled, "affected_activities", contra.affects)
     else
@@ -676,6 +683,9 @@ defmodule WplAi.Compiler do
 
     prescription =
       case ex.reps do
+        :amrap ->
+          Map.put(prescription, "reps", %{"amrap" => true})
+
         {min, max, target} ->
           Map.put(prescription, "reps", %{"min" => min, "max" => max, "target" => target})
 
@@ -706,6 +716,13 @@ defmodule WplAi.Compiler do
     prescription =
       if ex.weight do
         Map.put(prescription, "weight", compile_weight(ex.weight))
+      else
+        prescription
+      end
+
+    prescription =
+      if ex.to_failure == true do
+        Map.put(prescription, "to_failure", true)
       else
         prescription
       end
@@ -906,20 +923,29 @@ defmodule WplAi.Compiler do
       "category" => to_string(recovery.category)
     }
 
-    compiled =
-      if recovery.duration do
-        Map.put(compiled, "duration", compile_duration(recovery.duration))
+    prescription = %{}
+
+    prescription =
+      if recovery.duration && recovery.duration.value > 0 do
+        Map.put(prescription, "duration", compile_duration(recovery.duration))
       else
-        compiled
+        prescription
       end
 
-    if recovery.exercises && recovery.exercises != [] do
-      exercises =
-        recovery.exercises
-        |> Enum.with_index(1)
-        |> Enum.map(fn {ex, idx} -> compile_recovery_exercise(ex, idx) end)
+    prescription =
+      if recovery.exercises && recovery.exercises != [] do
+        exercises =
+          recovery.exercises
+          |> Enum.with_index(1)
+          |> Enum.map(fn {ex, idx} -> compile_recovery_exercise(ex, idx) end)
 
-      Map.put(compiled, "exercises", exercises)
+        Map.put(prescription, "exercises", exercises)
+      else
+        prescription
+      end
+
+    if prescription != %{} do
+      Map.put(compiled, "prescription", prescription)
     else
       compiled
     end
@@ -953,7 +979,32 @@ defmodule WplAi.Compiler do
         compiled
       end
 
-    compiled
+    compiled =
+      if ex.modality do
+        Map.put(compiled, "modality", ex.modality)
+      else
+        compiled
+      end
+
+    compiled =
+      if ex.intensity_rpe do
+        Map.put(compiled, "intensity_rpe", ex.intensity_rpe)
+      else
+        compiled
+      end
+
+    compiled =
+      if ex.body_part do
+        Map.put(compiled, "body_part", ex.body_part)
+      else
+        compiled
+      end
+
+    if ex.pnf do
+      Map.put(compiled, "pnf", compile_pnf_spec(ex.pnf))
+    else
+      compiled
+    end
   end
 
   defp compile_activity(%AST.Habit{} = habit, index) do
@@ -1027,6 +1078,14 @@ defmodule WplAi.Compiler do
     compile_activity(ex, index)
   end
 
+  defp compile_pnf_spec(%AST.PnfSpec{} = pnf) do
+    %{
+      "contraction_seconds" => pnf.contraction_seconds,
+      "relax_seconds" => pnf.relax_seconds,
+      "contractions" => pnf.contractions
+    }
+  end
+
   # =============================================================================
   # Progress & Notifications Compilation
   # =============================================================================
@@ -1070,7 +1129,8 @@ defmodule WplAi.Compiler do
 
     compiled =
       if cp.measurements && cp.measurements != [] do
-        Map.put(compiled, "measurements", cp.measurements)
+        measurements = Enum.map(cp.measurements, &compile_measurement/1)
+        Map.put(compiled, "measurements", measurements)
       else
         compiled
       end
@@ -1080,6 +1140,21 @@ defmodule WplAi.Compiler do
     else
       compiled
     end
+  end
+
+  # Compile a single measurement item — either a plain string (back-compat) or
+  # a typed MeasurementSpec (schema v1.6.0+).
+  defp compile_measurement(item) when is_binary(item), do: item
+
+  defp compile_measurement(%AST.MeasurementSpec{} = spec) do
+    compiled = %{"metric" => spec.metric}
+
+    compiled =
+      if spec.questionnaire,
+        do: Map.put(compiled, "questionnaire", spec.questionnaire),
+        else: compiled
+
+    if spec.note, do: Map.put(compiled, "note", spec.note), else: compiled
   end
 
   defp compile_points_config(%AST.PointsConfig{} = pc) do
@@ -1141,8 +1216,9 @@ defmodule WplAi.Compiler do
     %{"type" => "percentage_bodyweight", "value" => value, "unit" => "%"}
   end
 
-  defp compile_weight(%AST.Weight{type: :percentage_1rm, value: value, unit: unit}) do
-    %{"type" => "percentage_1rm", "value" => value, "unit" => unit}
+  defp compile_weight(%AST.Weight{type: :percentage_1rm, value: value, unit: unit, metric: metric}) do
+    compiled = %{"type" => "percentage_1rm", "value" => value, "unit" => unit}
+    if metric, do: Map.put(compiled, "metric", metric), else: compiled
   end
 
   defp compile_weight(%AST.Weight{value: value, unit: unit}) do
@@ -1150,7 +1226,7 @@ defmodule WplAi.Compiler do
   end
 
   defp compile_cardio_intensity(%AST.Intensity{type: :bpm, range: {min, max}}) do
-    %{"type" => "bpm", "min_bpm" => min, "max_bpm" => max}
+    %{"type" => "bpm", "target" => %{"min_bpm" => min, "max_bpm" => max}}
   end
 
   defp compile_cardio_intensity(%AST.Intensity{type: :power, value: value}) do

@@ -228,13 +228,15 @@ defmodule WplAi.AST do
 
   defmodule Contraindication do
     @moduledoc "Medical contraindication"
-    defstruct [:condition, :action, :affects]
+    defstruct [:condition, :action, :severity, :affects]
 
-    @type action :: :exclude | :modify
+    @type action :: :exclude | :modify | :require_clearance
+    @type severity :: :low | :moderate | :high
 
     @type t :: %__MODULE__{
             condition: String.t(),
             action: action(),
+            severity: severity() | nil,
             affects: [String.t()] | nil
           }
   end
@@ -449,13 +451,18 @@ defmodule WplAi.AST do
       :tempo,
       :rest,
       :weight,
+      :to_failure,
       :primary_muscles,
       :secondary_muscles,
       :movement_pattern,
       meta: %{}
     ]
 
-    @type reps_spec :: integer() | {integer(), integer()} | {integer(), integer(), integer()}
+    @type reps_spec ::
+            integer()
+            | {integer(), integer()}
+            | {integer(), integer(), integer()}
+            | :amrap
 
     @type t :: %__MODULE__{
             exercise_ref: String.t(),
@@ -467,6 +474,7 @@ defmodule WplAi.AST do
             tempo: String.t() | nil,
             rest: Duration.t() | nil,
             weight: Weight.t() | nil,
+            to_failure: true | nil,
             primary_muscles: [String.t()] | nil,
             secondary_muscles: [String.t()] | nil,
             movement_pattern: String.t() | nil,
@@ -476,14 +484,16 @@ defmodule WplAi.AST do
 
   defmodule Weight do
     @moduledoc "Weight specification"
-    defstruct [:type, :value, :unit]
+    defstruct [:type, :value, :unit, :metric]
 
-    @type weight_type :: :bodyweight | :absolute | :percentage_1rm
+    @type weight_type :: :bodyweight | :absolute | :percentage_1rm | :percentage_bodyweight
+    @type metric :: String.t() | nil
 
     @type t :: %__MODULE__{
             type: weight_type(),
             value: number() | nil,
-            unit: String.t() | nil
+            unit: String.t() | nil,
+            metric: metric()
           }
   end
 
@@ -617,9 +627,20 @@ defmodule WplAi.AST do
           }
   end
 
+  defmodule PnfSpec do
+    @moduledoc "PNF stretching parameters (schema v1.6.0+)"
+    defstruct [:contraction_seconds, :relax_seconds, :contractions]
+
+    @type t :: %__MODULE__{
+            contraction_seconds: integer(),
+            relax_seconds: integer(),
+            contractions: integer()
+          }
+  end
+
   defmodule RecoveryExercise do
     @moduledoc "Individual recovery exercise"
-    defstruct [:name, :hold_seconds, :reps, :sides]
+    defstruct [:name, :hold_seconds, :reps, :sides, :modality, :intensity_rpe, :body_part, :pnf]
 
     @type sides :: :both | :left | :right
 
@@ -627,7 +648,11 @@ defmodule WplAi.AST do
             name: String.t(),
             hold_seconds: integer(),
             reps: integer(),
-            sides: sides() | nil
+            sides: sides() | nil,
+            modality: String.t() | nil,
+            intensity_rpe: integer() | nil,
+            body_part: String.t() | nil,
+            pnf: PnfSpec.t() | nil
           }
   end
 
@@ -687,16 +712,28 @@ defmodule WplAi.AST do
           }
   end
 
+  defmodule MeasurementSpec do
+    @moduledoc "Typed measurement specification (schema v1.6.0+)"
+    defstruct [:metric, :questionnaire, :note]
+
+    @type t :: %__MODULE__{
+            metric: String.t(),
+            questionnaire: String.t() | nil,
+            note: String.t() | nil
+          }
+  end
+
   defmodule Checkpoint do
     @moduledoc "Progress checkpoint"
     defstruct [:name, :trigger, :measurements, :questions]
 
     @type trigger :: {:time, integer(), integer()} | :completion | :manual
+    @type measurement :: String.t() | MeasurementSpec.t()
 
     @type t :: %__MODULE__{
             name: String.t(),
             trigger: trigger(),
-            measurements: [String.t()] | nil,
+            measurements: [measurement()] | nil,
             questions: [String.t()] | nil
           }
   end

@@ -634,55 +634,130 @@ defmodule WplAi.Parser do
   defp parse_contraindication(state) do
     state = advance(state)
     {:ok, condition, state} = expect_bare_word(state)
-    state = expect_arrow(state)
-    {:ok, action_str, state} = expect_bare_word(state)
 
-    action =
-      case action_str do
-        "exclude" -> :exclude
-        "modify" -> :modify
-        _ -> :exclude
-      end
+    # Two forms:
+    #   Old: contraindication <name> -> <action> [indented affects block]
+    #   New: contraindication <name> [severity <low|moderate|high>] [action <action>]
+    case current_token(state) do
+      {:arrow, _, _} ->
+        # Old arrow form
+        state = advance(state)
+        {:ok, action_str, state} = expect_bare_word(state)
 
-    affects =
-      case current_token(state) do
-        {:indent, _, _} ->
-          state = advance(state)
-          state = skip_newlines(state)
+        action = parse_contraindication_action(action_str)
 
+        {affects_list, state} = parse_contraindication_affects(state)
+
+        contra = %AST.Contraindication{
+          condition: condition,
+          action: action,
+          severity: nil,
+          affects: affects_list
+        }
+
+        {:ok, contra, state}
+
+      _ ->
+        # New keyword form: optional severity, optional action
+        {severity, state} =
           case current_token(state) do
-            {:keyword, "affects", _} ->
+            {:keyword, "severity", _} ->
               state = advance(state)
-              {:ok, list, state} = parse_enum_list(state)
 
-              state =
-                case current_token(state) do
-                  {:dedent, _, _} -> advance(state)
-                  _ -> state
-                end
+              case current_token(state) do
+                {tag, level, _} when tag in [:keyword, :bare_word] and level in ["low", "moderate", "high"] ->
+                  {String.to_atom(level), advance(state)}
 
-              {list, state}
-
-            {:dedent, _, _} ->
-              {nil, advance(state)}
+                _ ->
+                  {nil, state}
+              end
 
             _ ->
               {nil, state}
           end
 
-        _ ->
-          {nil, state}
-      end
+        {action, state} =
+          case current_token(state) do
+            {tag, "action", _} when tag in [:keyword, :bare_word] ->
+              state = advance(state)
+              {:ok, action_str, state} = expect_bare_word(state)
+              {parse_contraindication_action(action_str), state}
 
-    {affects_list, state} = affects
+            _ ->
+              {:exclude, state}
+          end
 
-    contra = %AST.Contraindication{
-      condition: condition,
-      action: action,
-      affects: affects_list
-    }
+        # Optional affects list in parentheses: action modify (squat, lunge)
+        {affects_list, state} = parse_contraindication_paren_affects(state)
 
-    {:ok, contra, state}
+        contra = %AST.Contraindication{
+          condition: condition,
+          action: action,
+          severity: severity,
+          affects: affects_list
+        }
+
+        {:ok, contra, state}
+    end
+  end
+
+  defp parse_contraindication_action(str) do
+    case str do
+      "exclude" -> :exclude
+      "modify" -> :modify
+      "require_clearance" -> :require_clearance
+      _ -> :exclude
+    end
+  end
+
+  defp parse_contraindication_affects(state) do
+    case current_token(state) do
+      {:indent, _, _} ->
+        state = advance(state)
+        state = skip_newlines(state)
+
+        case current_token(state) do
+          {:keyword, "affects", _} ->
+            state = advance(state)
+            {:ok, list, state} = parse_enum_list(state)
+
+            state =
+              case current_token(state) do
+                {:dedent, _, _} -> advance(state)
+                _ -> state
+              end
+
+            {list, state}
+
+          {:dedent, _, _} ->
+            {nil, advance(state)}
+
+          _ ->
+            {nil, state}
+        end
+
+      _ ->
+        {nil, state}
+    end
+  end
+
+  defp parse_contraindication_paren_affects(state) do
+    case current_token(state) do
+      {:lparen, _, _} ->
+        state = advance(state)
+        {:ok, list, state} = parse_enum_list(state)
+
+        state =
+          case current_token(state) do
+            {:rparen, _, _} -> advance(state)
+            _ -> state
+          end
+
+        {list, state}
+
+      _ ->
+        {nil, state}
+    end
   end
 
   defp parse_time_commitment(state) do
@@ -2226,6 +2301,7 @@ defmodule WplAi.Parser do
               tempo: modifiers[:tempo],
               rest: modifiers[:rest],
               weight: modifiers[:weight],
+              to_failure: modifiers[:to_failure],
               primary_muscles: modifiers[:primary_muscles],
               secondary_muscles: modifiers[:secondary_muscles],
               movement_pattern: modifiers[:movement_pattern]
@@ -2249,6 +2325,32 @@ defmodule WplAi.Parser do
               tempo: modifiers[:tempo],
               rest: modifiers[:rest],
               weight: modifiers[:weight],
+              to_failure: modifiers[:to_failure],
+              primary_muscles: modifiers[:primary_muscles],
+              secondary_muscles: modifiers[:secondary_muscles],
+              movement_pattern: modifiers[:movement_pattern]
+            }
+
+            {:ok, exercise, state}
+
+          {:bare_word, xamrap, _}
+          when xamrap in ["xAMRAP", "xamrap", "xAmrap"] ->
+            # Compact form: NxAMRAP — the lexer fuses "x" and "AMRAP" into one token
+            # because "x" is not stopped before uppercase letters.
+            state = advance(state)
+            {modifiers, state} = parse_exercise_modifiers(state, %{})
+
+            exercise = %AST.Exercise{
+              exercise_ref: name,
+              name: modifiers[:name],
+              sets: trunc(sets),
+              reps: :amrap,
+              rpe: modifiers[:rpe],
+              rir: modifiers[:rir],
+              tempo: modifiers[:tempo],
+              rest: modifiers[:rest],
+              weight: modifiers[:weight],
+              to_failure: modifiers[:to_failure],
               primary_muscles: modifiers[:primary_muscles],
               secondary_muscles: modifiers[:secondary_muscles],
               movement_pattern: modifiers[:movement_pattern]
@@ -2295,37 +2397,53 @@ defmodule WplAi.Parser do
   end
 
   defp parse_reps_spec(state) do
-    {:ok, first, state} = expect_number(state)
-
+    # Check for AMRAP-only form: "x amrap" (no leading number)
     case current_token(state) do
-      {:range, _, _} ->
+      {tag, amrap, _} when tag in [:keyword, :bare_word] and amrap in ["AMRAP", "amrap"] ->
         state = advance(state)
-        {:ok, second, state} = expect_number(state)
+        {:ok, :amrap, state}
 
-        # Check for target
+      _ ->
+        {:ok, first, state} = expect_number(state)
+
         case current_token(state) do
+          {:range, _, _} ->
+            state = advance(state)
+            {:ok, second, state} = expect_number(state)
+
+            # Check for target
+            case current_token(state) do
+              {:keyword, "target", _} ->
+                state = advance(state)
+                {:ok, target, state} = expect_number(state)
+                state = skip_optional_target_unit(state)
+                {:ok, {trunc(first), trunc(second), trunc(target)}, state}
+
+              _ ->
+                {:ok, {trunc(first), trunc(second)}, state}
+            end
+
+          # Plain count followed by `target N` — e.g. `squat 3x10 target 10 rpe 6`.
+          # Subagents emit this shape (mirror of the range form); without this
+          # branch the `target` keyword leaks past parse_reps_spec and cascades
+          # up to block/day/week parsers, silently dropping everything after.
           {:keyword, "target", _} ->
             state = advance(state)
             {:ok, target, state} = expect_number(state)
             state = skip_optional_target_unit(state)
-            {:ok, {trunc(first), trunc(second), trunc(target)}, state}
+            {:ok, {trunc(first), trunc(first), trunc(target)}, state}
+
+          # AMRAP after a number: "NxAMRAP" where the number is sets (parsed by the
+          # outer exercise parser) and amrap is the reps spec. The "Nx" consumed sets
+          # already, so at this point `first` is actually reps — but when form is
+          # "1xAMRAP" sets=1, reps=AMRAP. The AMRAP token is matched here.
+          {tag, amrap, _} when tag in [:keyword, :bare_word] and amrap in ["AMRAP", "amrap"] ->
+            state = advance(state)
+            {:ok, :amrap, state}
 
           _ ->
-            {:ok, {trunc(first), trunc(second)}, state}
+            {:ok, trunc(first), state}
         end
-
-      # Plain count followed by `target N` — e.g. `squat 3x10 target 10 rpe 6`.
-      # Subagents emit this shape (mirror of the range form); without this
-      # branch the `target` keyword leaks past parse_reps_spec and cascades
-      # up to block/day/week parsers, silently dropping everything after.
-      {:keyword, "target", _} ->
-        state = advance(state)
-        {:ok, target, state} = expect_number(state)
-        state = skip_optional_target_unit(state)
-        {:ok, {trunc(first), trunc(first), trunc(target)}, state}
-
-      _ ->
-        {:ok, trunc(first), state}
     end
   end
 
@@ -2415,6 +2533,14 @@ defmodule WplAi.Parser do
         state = advance(state)
         {pattern, state} = parse_movement_pattern(state)
         parse_exercise_modifiers(state, Map.put(modifiers, :movement_pattern, pattern))
+
+      {:keyword, "to_failure", _} ->
+        state = advance(state)
+        parse_exercise_modifiers(state, Map.put(modifiers, :to_failure, true))
+
+      {:bare_word, "to_failure", _} ->
+        state = advance(state)
+        parse_exercise_modifiers(state, Map.put(modifiers, :to_failure, true))
 
       _ ->
         {modifiers, state}
@@ -2551,7 +2677,44 @@ defmodule WplAi.Parser do
               :absolute
           end
 
-        weight = %AST.Weight{type: type, value: value, unit: unit}
+        # Optional `metric <enum>` qualifier (schema v1.6.0+)
+        # The metric token may start with a digit (e.g. "1rm", "e1rm") —
+        # in that case the lexer splits "1rm" into :number 1 + :bare_word "rm".
+        {metric, state} =
+          case current_token(state) do
+            {tag, "metric", _} when tag in [:keyword, :bare_word] ->
+              state = advance(state)
+
+              case current_token(state) do
+                {tag2, m, _} when tag2 in [:keyword, :bare_word] ->
+                  {canonicalize_weight_metric(m), advance(state)}
+
+                # "1rm" → :number 1 followed by :bare_word "rm"
+                {:number, n, _} ->
+                  state = advance(state)
+
+                  suffix =
+                    case current_token(state) do
+                      {tag3, s, _} when tag3 in [:keyword, :bare_word] ->
+                        {s, advance(state)}
+
+                      _ ->
+                        {"", state}
+                    end
+
+                  {suffix_str, state} = suffix
+                  raw = "#{trunc(n)}#{suffix_str}"
+                  {canonicalize_weight_metric(raw), state}
+
+                _ ->
+                  {nil, state}
+              end
+
+            _ ->
+              {nil, state}
+          end
+
+        weight = %AST.Weight{type: type, value: value, unit: unit, metric: metric}
         {:ok, weight, state}
 
       _ ->
@@ -3047,7 +3210,24 @@ defmodule WplAi.Parser do
 
       {:bare_word, _name, _} ->
         {:ok, exercise, state} = parse_recovery_exercise(state)
+        # Check if a pnf continuation line follows (same indent level)
+        state = skip_newlines(state)
+        {exercise, state} = maybe_parse_pnf_continuation(exercise, state)
         parse_recovery_body(state, attrs, [exercise | exercises])
+
+      {:keyword, "pnf", _} ->
+        # pnf line at the recovery body level — attach to the last exercise
+        case exercises do
+          [last | rest] ->
+            {:ok, pnf_spec, state} = parse_pnf_spec(state)
+            updated = %{last | pnf: pnf_spec}
+            parse_recovery_body(state, attrs, [updated | rest])
+
+          [] ->
+            # No exercise to attach to; skip the pnf line
+            state = skip_to_newline(state)
+            parse_recovery_body(state, attrs, exercises)
+        end
 
       {:dedent, _, _} ->
         state = advance(state)
@@ -3055,6 +3235,58 @@ defmodule WplAi.Parser do
 
       _ ->
         {attrs, Enum.reverse(exercises), state}
+    end
+  end
+
+  defp maybe_parse_pnf_continuation(exercise, state) do
+    case current_token(state) do
+      {:keyword, "pnf", _} ->
+        {:ok, pnf_spec, state} = parse_pnf_spec(state)
+        {%{exercise | pnf: pnf_spec}, state}
+
+      _ ->
+        {exercise, state}
+    end
+  end
+
+  # pnf <Ns> contract <Ns> relax <int> contractions
+  defp parse_pnf_spec(state) do
+    state = advance(state)
+    {:ok, contraction_seconds, state} = expect_number(state)
+    # skip optional 's' unit
+    state =
+      case current_token(state) do
+        {tag, u, _} when tag in [:keyword, :bare_word] and u in ["s", "seconds"] -> advance(state)
+        _ -> state
+      end
+
+    state = expect_keyword(state, "contract")
+    {:ok, relax_seconds, state} = expect_number(state)
+    # skip optional 's' unit
+    state =
+      case current_token(state) do
+        {tag, u, _} when tag in [:keyword, :bare_word] and u in ["s", "seconds"] -> advance(state)
+        _ -> state
+      end
+
+    state = expect_keyword(state, "relax")
+    {:ok, contractions, state} = expect_number(state)
+    state = expect_keyword(state, "contractions")
+
+    pnf = %AST.PnfSpec{
+      contraction_seconds: trunc(contraction_seconds),
+      relax_seconds: trunc(relax_seconds),
+      contractions: trunc(contractions)
+    }
+
+    {:ok, pnf, state}
+  end
+
+  defp skip_to_newline(state) do
+    case current_token(state) do
+      {:newline, _, _} -> state
+      {:eof, _, _} -> state
+      _ -> skip_to_newline(advance(state))
     end
   end
 
@@ -3112,14 +3344,49 @@ defmodule WplAi.Parser do
 
     {sides_val, state} = sides
 
+    # Optional v1.6.0 modifiers: modality, intensity (-> intensity_rpe), body (-> body_part)
+    {extra, state} = parse_recovery_exercise_extra(state, %{})
+
     exercise = %AST.RecoveryExercise{
       name: name,
       hold_seconds: trunc(hold),
       reps: trunc(reps),
-      sides: sides_val
+      sides: sides_val,
+      modality: extra[:modality],
+      intensity_rpe: extra[:intensity_rpe],
+      body_part: extra[:body_part],
+      pnf: nil
     }
 
     {:ok, exercise, state}
+  end
+
+  defp parse_recovery_exercise_extra(state, extra) do
+    case current_token(state) do
+      {tag, "modality", _} when tag in [:keyword, :bare_word] ->
+        state = advance(state)
+
+        case current_token(state) do
+          {tag2, modality, _} when tag2 in [:keyword, :bare_word] ->
+            parse_recovery_exercise_extra(advance(state), Map.put(extra, :modality, modality))
+
+          _ ->
+            parse_recovery_exercise_extra(state, extra)
+        end
+
+      {tag, "intensity", _} when tag in [:keyword, :bare_word] ->
+        state = advance(state)
+        {:ok, value, state} = expect_number(state)
+        parse_recovery_exercise_extra(state, Map.put(extra, :intensity_rpe, trunc(value)))
+
+      {tag, "body", _} when tag in [:keyword, :bare_word] ->
+        state = advance(state)
+        {:ok, body, state} = expect_bare_word(state)
+        parse_recovery_exercise_extra(state, Map.put(extra, :body_part, body))
+
+      _ ->
+        {extra, state}
+    end
   end
 
   # Sub-plan inclusion activity (schema v1.5.0+):
@@ -3244,6 +3511,12 @@ defmodule WplAi.Parser do
     state = skip_newlines(state)
 
     case current_token(state) do
+      # Inline CHECKPOINT keyword (TS-style): CHECKPOINT "Name":
+      {:keyword, "CHECKPOINT", _} ->
+        {:ok, checkpoint, state} = parse_checkpoint_inline(state)
+        checkpoints = Map.get(attrs, :checkpoints, [])
+        parse_progress_body(state, Map.put(attrs, :checkpoints, checkpoints ++ [checkpoint]))
+
       {:keyword, "checkpoints", _} ->
         state = advance(state)
         state = expect_colon(state)
@@ -3318,6 +3591,87 @@ defmodule WplAi.Parser do
     {:ok, checkpoint, state}
   end
 
+  # TS-style inline CHECKPOINT "Name": block (no `checkpoints:` wrapper)
+  defp parse_checkpoint_inline(state) do
+    state = advance(state)
+    {:ok, name, state} = expect_string(state)
+    state = expect_colon(state)
+    state = skip_newlines(state)
+
+    state =
+      case current_token(state) do
+        {:indent, _, _} -> advance(state)
+        _ -> state
+      end
+
+    {attrs, state} = parse_checkpoint_body_inline(state, %{})
+
+    checkpoint = %AST.Checkpoint{
+      name: name,
+      trigger: attrs[:trigger],
+      measurements: attrs[:measurements],
+      questions: attrs[:questions]
+    }
+
+    {:ok, checkpoint, state}
+  end
+
+  defp parse_checkpoint_body_inline(state, attrs) do
+    state = skip_newlines(state)
+
+    case current_token(state) do
+      # `at N weeks/days` — shorthand trigger form (TS-style)
+      {:keyword, "at", _} ->
+        state = advance(state)
+        {:ok, value, state} = expect_number(state)
+
+        {unit, state} =
+          case current_token(state) do
+            {tag, u, _} when tag in [:keyword, :bare_word] ->
+              {parse_time_unit(u), advance(state)}
+
+            _ ->
+              {:weeks, state}
+          end
+
+        # Store as {:time, value, unit_atom} — compiler uses the value + unit
+        trigger = {:time, trunc(value), unit}
+        parse_checkpoint_body_inline(state, Map.put(attrs, :trigger, trigger))
+
+      {:keyword, "measure", _} ->
+        state = advance(state)
+        state = expect_colon(state)
+        state = skip_newlines(state)
+        state = expect_indent(state)
+        {:ok, measurements, state} = parse_typed_measurement_list(state, [])
+        parse_checkpoint_body_inline(state, Map.put(attrs, :measurements, measurements))
+
+      {:keyword, "ask", _} ->
+        state = advance(state)
+        state = expect_colon(state)
+        state = skip_newlines(state)
+        state = expect_indent(state)
+        {:ok, questions, state} = parse_string_list(state, [])
+        parse_checkpoint_body_inline(state, Map.put(attrs, :questions, questions))
+
+      {:keyword, "trigger", _} ->
+        state = advance(state)
+        {:ok, trigger, state} = parse_trigger(state)
+        parse_checkpoint_body_inline(state, Map.put(attrs, :trigger, trigger))
+
+      {:dedent, _, _} ->
+        state = advance(state)
+        {attrs, state}
+
+      {:keyword, "CHECKPOINT", _} ->
+        # Next sibling checkpoint — stop
+        {attrs, state}
+
+      _ ->
+        {attrs, state}
+    end
+  end
+
   defp parse_checkpoint_body(state, attrs) do
     state = skip_newlines(state)
 
@@ -3370,6 +3724,95 @@ defmodule WplAi.Parser do
 
       _ ->
         {:ok, :manual, state}
+    end
+  end
+
+  # Parse a typed measurement list. Items are one of:
+  #   - bare metric token (bare_word or keyword matching @measurement_metrics)
+  #   - `<metric> questionnaire <enum> [note "text"]`
+  #   - quoted string (back-compat plain string)
+  defp parse_typed_measurement_list(state, items) do
+    state = skip_newlines(state)
+
+    case current_token(state) do
+      {:string, str, _} ->
+        state = advance(state)
+        parse_typed_measurement_list(state, [str | items])
+
+      {:minus, _, _} ->
+        # Dash-prefixed items: "-  body_weight_kg"
+        state = advance(state)
+
+        case current_token(state) do
+          {:string, str, _} ->
+            state = advance(state)
+            parse_typed_measurement_list(state, [str | items])
+
+          {tag, metric, _} when tag in [:keyword, :bare_word] ->
+            state = advance(state)
+            spec = %AST.MeasurementSpec{metric: metric}
+            parse_typed_measurement_list(state, [spec | items])
+
+          _ ->
+            parse_typed_measurement_list(state, items)
+        end
+
+      {tag, metric, _} when tag in [:keyword, :bare_word] ->
+        state = advance(state)
+
+        # Check for optional `questionnaire <enum> [note "text"]`
+        spec =
+          case current_token(state) do
+            {:keyword, "questionnaire", _} ->
+              state = advance(state)
+
+              {questionnaire, state} =
+                case current_token(state) do
+                  {qtag, qval, _} when qtag in [:keyword, :bare_word] ->
+                    {qval, advance(state)}
+
+                  _ ->
+                    {nil, state}
+                end
+
+              {note, state} =
+                case current_token(state) do
+                  {:keyword, "note", _} ->
+                    state = advance(state)
+                    {:ok, n, state} = expect_string(state)
+                    {n, state}
+
+                  {:bare_word, "note", _} ->
+                    state = advance(state)
+                    {:ok, n, state} = expect_string(state)
+                    {n, state}
+
+                  _ ->
+                    {nil, state}
+                end
+
+              {%AST.MeasurementSpec{metric: metric, questionnaire: questionnaire, note: note},
+               state}
+
+            _ ->
+              {%AST.MeasurementSpec{metric: metric}, state}
+          end
+
+        {item, state} =
+          if is_tuple(spec) do
+            spec
+          else
+            {spec, state}
+          end
+
+        parse_typed_measurement_list(state, [item | items])
+
+      {:dedent, _, _} ->
+        state = advance(state)
+        {:ok, Enum.reverse(items), state}
+
+      _ ->
+        {:ok, Enum.reverse(items), state}
     end
   end
 
@@ -3987,6 +4430,18 @@ defmodule WplAi.Parser do
     case current_token(%{tokens: tokens, pos: pos}) do
       {_, _, loc} -> loc
       _ -> Location.new(0, 0)
+    end
+  end
+
+  # Canonicalize the weight metric DSL token to its schema enum value.
+  # DSL is case-insensitive; schema uses mixed-case for some values.
+  defp canonicalize_weight_metric(token) do
+    case String.downcase(token) do
+      "1rm" -> "1RM"
+      "e1rm" -> "e1RM"
+      "training_max" -> "training_max"
+      "daily_max" -> "daily_max"
+      other -> other
     end
   end
 
