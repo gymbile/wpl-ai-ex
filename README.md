@@ -46,6 +46,10 @@ You can also access the pipeline steps individually:
 {:ok, text} = WplAi.decompile(json)   # WPL JSON → WPL-AI text (round-trip)
 ```
 
+## Conformance
+
+The compile-conformance corpus lives in the sibling [`gymbile/wpl`](https://github.com/gymbile/wpl) repo at `conformance/compile/fixtures/`. The runner at `test/conformance_test.exs` discovers it automatically via a relative path (`../../wpl/conformance/compile/fixtures/`) — check out `wpl/` next to `wpl-ai-ex/` on disk and it works with no configuration. Set `WPL_CORPUS_DIR` to override the path (useful for CI that checks out repos at arbitrary locations). Run with `mix test test/conformance_test.exs`. When the corpus is absent, one skipped test is emitted and exit code remains 0.
+
 ## Status
 
 Version 1.0.0 — initial extract from `gymbile_backend`. The compiler emits WPL
