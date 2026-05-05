@@ -7,6 +7,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-05-04
+
+### Added
+- **`Phase.type` enum** (schema v1.5.0) — DSL: `PHASE "Name" <type> (N weeks):` where `<type>` is
+  one of `accumulation | intensification | realization | deload | base | build | peak | recovery | transition`.
+  Compiler emits `phase.type: "<value>"`. When omitted, no `type` key is emitted on the phase object.
+- **`Week.is_deload`** (schema v1.5.0) — DSL: `WEEK N deload` (optional token immediately after the
+  week number, before the optional name string). Compiler emits `week.is_deload: true`. When absent,
+  the field is omitted (not emitted as `false`).
+- **`SubPlanActivity`** (schema v1.5.0) — new activity variant `subplan <plan-id>` (optionally
+  followed by a quoted name string) inside any block. Compiler emits
+  `{ type: "sub_plan", id: "sub_plan_N", sub_plan_ref: "<plan-id>", name?: "<optional>" }`.
+
 ## [1.4.0] — 2026-05-04
 
 ### Added
