@@ -7,6 +7,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-05-04
+
+### Added
+- **Per-kg macros + per-kg cals + TDEE multiplier** (schema v1.4.0) — DSL accepts unit suffixes
+  `g_per_kg` on `protein`, `carbs`, `fat` lines and `kcal_per_kg` / `multiplier_of_tdee` on
+  `calories` lines. Compiler emits the unit verbatim into `MacroRange.unit` / `Calories.unit`.
+  Default units remain `"g"` and `"kcal"` when no suffix is given.
+- **`Weight.percentage_bodyweight`** (schema v1.4.0) — DSL: `weight N% bw` or
+  `weight N% bodyweight`. Compiler emits `Weight` with `type: "percentage_bodyweight"`,
+  `value: N`, `unit: "%"`. Existing `weight N kg` (absolute) and `weight N% rm`
+  (percentage_1rm) forms are unchanged.
+
 ## [1.3.0] — 2026-05-04
 
 ### Fixed
