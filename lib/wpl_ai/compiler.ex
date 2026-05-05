@@ -700,7 +700,7 @@ defmodule WplAi.Compiler do
 
     prescription =
       if ex.tempo do
-        Map.put(prescription, "tempo", ex.tempo)
+        Map.put(prescription, "tempo", normalize_tempo(ex.tempo))
       else
         prescription
       end
@@ -847,7 +847,16 @@ defmodule WplAi.Compiler do
     prescription =
       case nutrition.calories do
         {min, max, unit} ->
-          Map.put(prescription, "calories", %{"min" => min, "max" => max, "unit" => unit})
+          # Bug 3 fix: omit unit when it is "kcal" (the schema default).
+          # TS only emits unit for kcal_per_kg and multiplier_of_tdee.
+          cal =
+            if unit == "kcal" do
+              %{"min" => min, "max" => max}
+            else
+              %{"min" => min, "max" => max, "unit" => unit}
+            end
+
+          Map.put(prescription, "calories", cal)
 
         _ ->
           prescription
@@ -1005,6 +1014,8 @@ defmodule WplAi.Compiler do
     end
   end
 
+  # Bug 6 fix: wrap target/frequency/reminder_times under a `prescription` key
+  # (TS parity — schema HabitActivity requires a nested prescription object).
   defp compile_activity(%AST.Habit{} = habit, index) do
     compiled = %{
       "id" => "habit_#{index}",
@@ -1013,30 +1024,45 @@ defmodule WplAi.Compiler do
       "category" => to_string(habit.category)
     }
 
-    compiled =
-      if habit.target do
-        Map.put(compiled, "target", habit.target)
+    prescription = %{}
+
+    prescription =
+      if habit.target != nil do
+        target = %{"value" => habit.target}
+
+        target =
+          if habit.target_unit do
+            Map.put(target, "unit", habit.target_unit)
+          else
+            target
+          end
+
+        Map.put(prescription, "target", target)
       else
-        compiled
+        prescription
       end
 
-    compiled =
-      if habit.target_unit do
-        Map.put(compiled, "target_unit", habit.target_unit)
-      else
-        compiled
-      end
-
-    compiled =
+    prescription =
       if habit.frequency do
-        Map.put(compiled, "frequency", habit.frequency)
+        Map.put(prescription, "frequency", habit.frequency)
       else
-        compiled
+        prescription
       end
 
-    if habit.reminders && habit.reminders != [] do
-      times = Enum.map(habit.reminders, &Time.to_string/1)
-      Map.put(compiled, "reminder_times", times)
+    prescription =
+      if habit.reminders && habit.reminders != [] do
+        times =
+          Enum.map(habit.reminders, fn t ->
+            t |> Time.to_string() |> String.slice(0, 5)
+          end)
+
+        Map.put(prescription, "reminder_times", times)
+      else
+        prescription
+      end
+
+    if prescription != %{} do
+      Map.put(compiled, "prescription", prescription)
     else
       compiled
     end
@@ -1207,12 +1233,83 @@ defmodule WplAi.Compiler do
     %{"value" => value, "unit" => to_string(unit)}
   end
 
+  # ---------------------------------------------------------------------------
+  # Bug 1 fix: normalize tempo string into structured object (TS parity).
+  #
+  # Recognises two forms:
+  #   "3-1-1-0"  -> %{eccentric: 3, pause_bottom: 1, concentric: 1, pause_top: 0}
+  #   "30X1"     -> same with explosive_concentric: true, concentric: 0
+  # Falls back to the original string for unrecognised shapes (schema oneOf
+  # accepts both).
+  # ---------------------------------------------------------------------------
+
+  @dashed_tempo ~r/^(\d+)[-:](\d+|X)[-:](\d+|X)[-:](\d+|X)$/i
+  @four_digit_tempo ~r/^(\d|X)(\d|X)(\d|X)(\d|X)$/i
+
+  defp normalize_tempo(tempo) when not is_binary(tempo), do: tempo
+
+  defp normalize_tempo(tempo) when is_binary(tempo) do
+    m =
+      Regex.run(@dashed_tempo, tempo, capture: :all_but_first) ||
+        Regex.run(@four_digit_tempo, tempo, capture: :all_but_first)
+
+    case m do
+      [ecc_s, pb_s, conc_s, pt_s] ->
+        ecc = parse_tempo_seg(ecc_s)
+        pb = parse_tempo_seg(pb_s)
+        conc = parse_tempo_seg(conc_s)
+        pt = parse_tempo_seg(pt_s)
+
+        # Eccentric cannot be "X" — fall back to string if so.
+        case ecc do
+          {nil, _} ->
+            tempo
+
+          {ecc_val, _} ->
+            {pb_val, _} = pb
+            {conc_val, conc_explosive} = conc
+            {pt_val, _} = pt
+
+            result = %{
+              "eccentric" => ecc_val,
+              "pause_bottom" => pb_val || 0,
+              "concentric" => conc_val || 0,
+              "pause_top" => pt_val || 0
+            }
+
+            if conc_explosive do
+              Map.put(result, "explosive_concentric", true)
+            else
+              result
+            end
+        end
+
+      _ ->
+        tempo
+    end
+  end
+
+  # Returns {number_or_nil, explosive_boolean}.
+  defp parse_tempo_seg(s) when s in ["X", "x"], do: {nil, true}
+
+  defp parse_tempo_seg(s) do
+    case Integer.parse(s) do
+      {n, ""} -> {n, false}
+      _ -> {nil, false}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Weight compilation
+  # ---------------------------------------------------------------------------
+
   defp compile_weight(%AST.Weight{type: :bodyweight}) do
     %{"type" => "bodyweight"}
   end
 
+  # Bug 2 fix: percentage_bodyweight uses unit "bw" (TS parity), not "%".
   defp compile_weight(%AST.Weight{type: :percentage_bodyweight, value: value}) do
-    %{"type" => "percentage_bodyweight", "value" => value, "unit" => "%"}
+    %{"type" => "percentage_bodyweight", "value" => value, "unit" => "bw"}
   end
 
   defp compile_weight(%AST.Weight{
@@ -1285,6 +1382,42 @@ defmodule WplAi.Compiler do
     compiled
   end
 
+  # Bug 4 fix: map AST timing types to schema-valid output (TS parity).
+  #   :at_time        -> { type: "absolute", time: "HH:MM" }
+  #   :before_workout -> { type: "relative", reference: "workout_start", offset? }
+  #   :after_workout  -> { type: "relative", reference: "workout_end",   offset? }
+  defp compile_timing(%AST.NutritionTiming{type: :at_time, time: time}) do
+    compiled = %{"type" => "absolute"}
+
+    if time do
+      # Schema regex: ^\d{2}:\d{2}$ — emit only HH:MM, never HH:MM:SS.
+      formatted =
+        time
+        |> Time.to_string()
+        |> String.slice(0, 5)
+
+      Map.put(compiled, "time", formatted)
+    else
+      compiled
+    end
+  end
+
+  defp compile_timing(%AST.NutritionTiming{type: type} = timing)
+       when type in [:before_workout, :after_workout] do
+    reference =
+      if type == :before_workout, do: "workout_start", else: "workout_end"
+
+    compiled = %{"type" => "relative", "reference" => reference}
+
+    if timing.duration do
+      # Normalize offset magnitude to positive value (TS parity).
+      dur = %{timing.duration | value: abs(timing.duration.value)}
+      Map.put(compiled, "offset", compile_duration(dur))
+    else
+      compiled
+    end
+  end
+
   defp compile_timing(%AST.NutritionTiming{} = timing) do
     compiled = %{
       "type" => to_string(timing.type || :relative)
@@ -1297,14 +1430,16 @@ defmodule WplAi.Compiler do
         compiled
       end
 
-    compiled =
-      if timing.time do
-        Map.put(compiled, "time", Time.to_string(timing.time))
-      else
-        compiled
-      end
+    if timing.time do
+      time_str =
+        timing.time
+        |> Time.to_string()
+        |> String.slice(0, 5)
 
-    compiled
+      Map.put(compiled, "time", time_str)
+    else
+      compiled
+    end
   end
 
   defp duration_to_days(%AST.Duration{value: value, unit: :weeks}), do: trunc(value * 7)

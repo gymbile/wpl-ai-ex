@@ -1030,9 +1030,11 @@ defmodule WplAiTest do
 
       assert habit["type"] == "habit"
       assert habit["category"] == "hydration"
-      assert habit["target"] == 8
-      assert habit["target_unit"] == "glasses"
-      assert habit["frequency"] == "daily"
+      # target/frequency/reminder_times are nested under prescription (TS parity).
+      rx = habit["prescription"]
+      assert rx["target"]["value"] == 8
+      assert rx["target"]["unit"] == "glasses"
+      assert rx["frequency"] == "daily"
     end
   end
 

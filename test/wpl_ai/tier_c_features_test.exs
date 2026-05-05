@@ -133,7 +133,8 @@ defmodule WplAi.TierCFeaturesTest do
       assert macros["protein"]["unit"] == "g"
       assert macros["carbs"]["unit"] == "g"
       assert macros["fat"]["unit"] == "g"
-      assert calories["unit"] == "kcal"
+      # kcal is the schema default — unit is omitted when "kcal" (TS parity).
+      refute Map.has_key?(calories, "unit")
     end
   end
 

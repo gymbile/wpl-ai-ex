@@ -2543,6 +2543,14 @@ defmodule WplAi.Parser do
         state = advance(state)
         parse_exercise_modifiers(state, Map.put(modifiers, :to_failure, true))
 
+      # Bug 7 fix: bare `bodyweight` keyword after reps/sets is a shorthand
+      # for `weight bodyweight` — attach it as weight: {type: bodyweight} on
+      # the exercise rather than emitting a phantom simple activity.
+      {:keyword, "bodyweight", _} ->
+        weight = %AST.Weight{type: :bodyweight, value: nil, unit: nil}
+        state = advance(state)
+        parse_exercise_modifiers(state, Map.put(modifiers, :weight, weight))
+
       _ ->
         {modifiers, state}
     end
@@ -2617,22 +2625,33 @@ defmodule WplAi.Parser do
     end
   end
 
+  # Read a single tempo segment: either a number or the "X"/"x" keyword.
+  # Returns `{segment_string, new_state}` where segment_string is e.g. "3" or "X".
+  defp read_tempo_segment(state) do
+    case current_token(state) do
+      {:number, n, _} -> {"#{trunc(n)}", advance(state)}
+      {:keyword, x, _} when x in ["X", "x"] -> {"X", advance(state)}
+      {:bare_word, x, _} when x in ["X", "x"] -> {"X", advance(state)}
+      _ -> {"0", state}
+    end
+  end
+
   defp parse_tempo(state) do
-    # Tempo can be like "3-1-2-0" or as separate numbers
+    # Tempo can be like "3-1-2-0", "3-0-X-1", or as separate tokens.
     case current_token(state) do
       {:number, first, _} ->
         state = advance(state)
 
         case current_token(state) do
           {:minus, _, _} ->
-            # Parse tempo pattern
+            # Parse tempo pattern (supports X for explosive concentric).
             state = advance(state)
-            {:ok, second, state} = expect_number(state)
+            {second, state} = read_tempo_segment(state)
             state = expect_minus(state)
-            {:ok, third, state} = expect_number(state)
+            {third, state} = read_tempo_segment(state)
             state = expect_minus(state)
-            {:ok, fourth, state} = expect_number(state)
-            {:ok, "#{trunc(first)}-#{trunc(second)}-#{trunc(third)}-#{trunc(fourth)}", state}
+            {fourth, state} = read_tempo_segment(state)
+            {:ok, "#{trunc(first)}-#{second}-#{third}-#{fourth}", state}
 
           _ ->
             {:ok, "#{trunc(first)}", state}
@@ -3453,7 +3472,10 @@ defmodule WplAi.Parser do
       {:keyword, "frequency", _} ->
         state = advance(state)
         {:ok, freq, state} = expect_bare_word(state)
-        parse_plan_habit_body(state, Map.put(attrs, :frequency, freq))
+        # Bug 6 fix: was calling parse_plan_habit_body here (wrong), which
+        # does not handle `reminders`. Stay in parse_habit_body so subsequent
+        # lines (reminders, etc.) are still parsed.
+        parse_habit_body(state, Map.put(attrs, :frequency, freq))
 
       {:keyword, "reminders", _} ->
         state = advance(state)

@@ -79,6 +79,7 @@ defmodule WplAi.Lexer do
     achievement condition
     total zone intensity duration guided audio
     timing suggestions protein carbs fat calories
+    before_workout after_workout
     frequency reminders
     rounds rest_between_rounds
     schedule notes
