@@ -7,6 +7,27 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-05-04
+
+### Fixed
+- Compiler now emits the canonical `$schema` URL `https://wpl.dev/schemas/wpl/v1.schema.json`
+  (previously emitted `https://gymbile.com/schemas/wpl/v1`).
+
+### Added
+- **MuscleGroup + MovementPattern enums** — DSL: `<exercise> NxR muscles primary <m1>, <m2> secondary <m3> pattern <p>`.
+  Compiler emits `primary_muscles`, `secondary_muscles`, and `movement_pattern` on `ExerciseActivity`.
+  Supports all 22 `MuscleGroup` values and all 13 `MovementPattern` values from schema v1.3.0.
+- **Cardio `zone_model`** — DSL: `zone N model <zone_model>` qualifier inside a `cardio` block.
+  Compiler emits `intensity.zone_model` (7 values: `hr_3_zone_seiler`, `hr_5_zone`, `hr_7_zone`,
+  `power_coggan_7_zone`, `pace_critical_speed`, `rpe_borg_10`, `rpe_borg_20`).
+  New intensity type `intensity power N` emits `intensity.type: "power"`.
+- **Plan-level `ATHLETE_THRESHOLDS` block** — top-level DSL section (parallel to `PHASES`).
+  Accepts `hr_max N bpm`, `lthr N bpm`, `resting_hr N bpm`, `ftp N watts`, `vo2max N`,
+  `critical_pace N`, `body_weight N kg`, `one_rm <exercise> N kg`.
+  Compiler emits `plan.athlete_thresholds` with field-name suffixes matching schema v1.3.0
+  (`hr_max_bpm`, `lthr_bpm`, `resting_hr_bpm`, `ftp_watts`, `vo2max_ml_kg_min`,
+  `critical_pace_seconds_per_km`, `body_weight_kg`, `one_rm: [{ exercise_ref, value, unit }]`).
+
 ## [1.0.0] — 2026-05-04
 
 ### Added
