@@ -1,0 +1,382 @@
+defmodule WplAi.ParserTest do
+  use ExUnit.Case, async: true
+
+  alias WplAi.Parser
+  alias WplAi.AST
+
+  # Minimal valid plan header — used as a base for composing snippets.
+  @minimal_header ~S"""
+  PLAN "Test Plan"
+  TYPE workout
+  """
+
+  defp parse!(source) do
+    assert {:ok, doc} = Parser.parse(source)
+    doc
+  end
+
+  describe "parse/1 - minimal plan" do
+    test "minimal plan returns a Document struct with header" do
+      doc = parse!(@minimal_header)
+      assert %AST.Document{} = doc
+      assert %AST.Header{} = doc.header
+      assert doc.header.name == "Test Plan"
+      assert doc.header.type == :workout
+    end
+
+    test "phases defaults to empty list when omitted" do
+      doc = parse!(@minimal_header)
+      assert doc.phases == [] or is_nil(doc.phases)
+    end
+
+    test "optional sections are nil when omitted" do
+      doc = parse!(@minimal_header)
+      assert is_nil(doc.goals)
+      assert is_nil(doc.personalization)
+      assert is_nil(doc.athlete_thresholds)
+    end
+  end
+
+  describe "parse/1 - plan header attributes" do
+    test "parses visibility, difficulty, tags, and language" do
+      source = ~S"""
+      PLAN "Full Header"
+      TYPE nutrition
+      VISIBILITY public
+      DIFFICULTY advanced
+      TAGS fat_loss, cardio
+      LANGUAGE en
+      """
+
+      doc = parse!(source)
+      assert doc.header.visibility == :public
+      assert doc.header.difficulty == :advanced
+      assert doc.header.tags == ["fat_loss", "cardio"]
+      assert doc.header.language == "en"
+    end
+  end
+
+  describe "parse/1 - GOALS section" do
+    test "parses a primary goal with a target" do
+      source = ~S"""
+      PLAN "Goals Plan"
+      TYPE workout
+
+      GOALS
+        GOAL primary muscle_gain:
+          target weight 5 kg absolute
+      """
+
+      doc = parse!(source)
+      assert length(doc.goals) == 1
+      [goal] = doc.goals
+      assert goal.priority == :primary
+      assert goal.category == "muscle_gain"
+      assert goal.target.metric == "weight"
+      assert goal.target.value == 5
+      assert goal.target.unit == "kg"
+      assert goal.target.measurement_type == :absolute
+    end
+
+    test "parses a secondary goal" do
+      source = ~S"""
+      PLAN "Multi Goals"
+      TYPE workout
+
+      GOALS
+        GOAL primary strength:
+          target weight 100 kg absolute
+        GOAL secondary endurance:
+          target duration 60 minutes relative
+      """
+
+      doc = parse!(source)
+      assert length(doc.goals) == 2
+      priorities = Enum.map(doc.goals, & &1.priority)
+      assert :primary in priorities
+      assert :secondary in priorities
+    end
+  end
+
+  describe "parse/1 - PERSONALIZATION section" do
+    test "parses a simple WHEN rule with a replace action" do
+      source = ~S"""
+      PLAN "Personalized"
+      TYPE workout
+
+      PERSONALIZATION
+        RULES
+          WHEN injury contains knee:
+            replace squat -> wall_sit
+      """
+
+      doc = parse!(source)
+      assert length(doc.personalization.rules) == 1
+      [rule] = doc.personalization.rules
+      assert rule.condition.type == :simple
+      assert rule.condition.field == "injury"
+      assert rule.condition.op == :contains
+      assert rule.condition.value == "knee"
+    end
+
+    test "parses compound AND condition" do
+      source = ~S"""
+      PLAN "Compound Cond"
+      TYPE workout
+
+      PERSONALIZATION
+        RULES
+          WHEN age > 50 AND fitness == beginner:
+            reduce reps 20%
+      """
+
+      doc = parse!(source)
+      [rule] = doc.personalization.rules
+      assert rule.condition.type == :compound
+      assert rule.condition.operator == :and
+      assert length(rule.condition.conditions) == 2
+    end
+  end
+
+  describe "parse/1 - PHASES section" do
+    test "parses a single phase with one week and one day" do
+      source = ~S"""
+      PLAN "Phased Plan"
+      TYPE workout
+
+      PHASES
+        PHASE "Foundation" (2 weeks):
+          WEEK 1:
+            DAY Monday training 45m "Upper Body":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      doc = parse!(source)
+      assert length(doc.phases) == 1
+      [phase] = doc.phases
+      assert phase.name == "Foundation"
+      assert length(phase.weeks) == 1
+      [week] = phase.weeks
+      assert week.number == 1
+      assert length(week.days) == 1
+    end
+
+    test "parses multiple phases" do
+      source = ~S"""
+      PLAN "Multi Phase"
+      TYPE workout
+
+      PHASES
+        PHASE "Foundation" (2 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day A":
+              main straight_sets:
+                push_up 3x10
+        PHASE "Build" (4 weeks):
+          WEEK 1:
+            DAY Monday training 45m "Day B":
+              main straight_sets:
+                squat 4x8
+      """
+
+      doc = parse!(source)
+      assert length(doc.phases) == 2
+      names = Enum.map(doc.phases, & &1.name)
+      assert "Foundation" in names
+      assert "Build" in names
+    end
+  end
+
+  describe "parse/1 - exercise activities" do
+    test "parses sets x reps and RPE" do
+      source = ~S"""
+      PLAN "Exercise Plan"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Strength":
+              main straight_sets:
+                bench_press 3x8 rpe 8
+      """
+
+      doc = parse!(source)
+      [phase] = doc.phases
+      [week] = phase.weeks
+      [day] = week.days
+      [block] = day.blocks
+      [exercise] = block.activities
+      assert exercise.exercise_ref == "bench_press"
+      assert exercise.sets == 3
+      assert exercise.rpe == 8
+    end
+
+    test "parses rep range (reps as tuple)" do
+      source = ~S"""
+      PLAN "Rep Range"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day":
+              main straight_sets:
+                push_up 3x8..12
+      """
+
+      doc = parse!(source)
+      [phase] = doc.phases
+      [week] = phase.weeks
+      [day] = week.days
+      [block] = day.blocks
+      [exercise] = block.activities
+      assert exercise.sets == 3
+      assert is_tuple(exercise.reps) or exercise.reps == {8, 12}
+    end
+
+    test "parses rest duration" do
+      source = ~S"""
+      PLAN "Rest Plan"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day":
+              main straight_sets:
+                squat 3x5 rest 90 seconds
+      """
+
+      doc = parse!(source)
+      [phase] = doc.phases
+      [week] = phase.weeks
+      [day] = week.days
+      [block] = day.blocks
+      [exercise] = block.activities
+      assert exercise.rest != nil
+    end
+  end
+
+  describe "parse/1 - cardio activities" do
+    test "parses continuous cardio with modality and zone" do
+      source = ~S"""
+      PLAN "Cardio Plan"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Cardio":
+              main:
+                cardio rowing continuous:
+                  total 20 minutes
+                  zone 2
+      """
+
+      doc = parse!(source)
+      [phase] = doc.phases
+      [week] = phase.weeks
+      [day] = week.days
+      [block] = day.blocks
+      [activity] = block.activities
+      assert %AST.Cardio{} = activity
+      assert activity.modality == "rowing"
+      assert activity.cardio_type == :continuous
+      assert activity.total_duration.value == 20
+      assert activity.zone == 2
+    end
+  end
+
+  describe "parse/1 - warmup and cooldown blocks" do
+    test "parses warmup and cooldown in the same day" do
+      source = ~S"""
+      PLAN "Full Day"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 60m "Full":
+              warmup:
+                jumping_jack 5m
+              main straight_sets:
+                squat 3x10
+              cooldown:
+                hamstring_stretch 30s x2
+      """
+
+      doc = parse!(source)
+      [phase] = doc.phases
+      [week] = phase.weeks
+      [day] = week.days
+      block_types = Enum.map(day.blocks, & &1.type)
+      assert :warmup in block_types
+      assert :main in block_types
+      assert :cooldown in block_types
+    end
+  end
+
+  describe "parse/1 - ATHLETE_THRESHOLDS section" do
+    test "parses athlete thresholds" do
+      source = ~S"""
+      PLAN "Athlete Plan"
+      TYPE workout
+
+      ATHLETE_THRESHOLDS
+        hr_max 185
+        ftp 280 watts
+        body_weight 80 kg
+      """
+
+      doc = parse!(source)
+      assert %AST.AthleteThresholds{} = doc.athlete_thresholds
+      assert doc.athlete_thresholds.hr_max_bpm == 185
+      assert doc.athlete_thresholds.ftp_watts == 280
+      assert doc.athlete_thresholds.body_weight_kg == 80.0
+    end
+  end
+
+  describe "parse/1 - comments inside DSL" do
+    test "comments are ignored and do not affect parsing" do
+      source = ~S"""
+      # This is a plan-level comment
+      PLAN "Comment Plan"
+      TYPE workout
+      # Another comment
+      """
+
+      doc = parse!(source)
+      assert doc.header.name == "Comment Plan"
+    end
+  end
+
+  describe "parse/1 - quoted strings" do
+    test "plan name with spaces parses correctly" do
+      doc =
+        parse!(~S"""
+        PLAN "My Strength Plan 2024"
+        TYPE workout
+        """)
+
+      assert doc.header.name == "My Strength Plan 2024"
+    end
+  end
+
+  describe "parse/1 - error handling" do
+    test "missing TYPE returns an error" do
+      assert {:error, _errors} =
+               Parser.parse(~S"""
+               PLAN "No Type"
+               """)
+    end
+
+    test "missing PLAN keyword returns an error" do
+      assert {:error, _errors} =
+               Parser.parse(~S"""
+               TYPE workout
+               """)
+    end
+  end
+end
