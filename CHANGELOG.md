@@ -7,6 +7,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.6] — 2026-05-05
+
+### Fixed — 7 silent-failure parser/lexer bugs (TS parity with @gymbile/wpl-ai@1.10.4)
+
+- **Bug 1 — digit-leading TAGS value (`531`)**: `TAGS 531, strength` now produces `tags: ["531", "strength"]` instead of `tags: []`; `parse_tag_list` accepts number tokens.
+- **Bug 2 — digit-leading identifier in TAGS list (`1rm_estimate`)**: `TAGS strength_test, 1rm_estimate, powerlifting` no longer truncates after the digit-leading item; the `number + bare_word` token sequence is glued into a single tag string.
+- **Bug 3 — colon-qualified contraindication name (`acsm:cardiac_rehab_phase_2`)**: the parser now accepts `prefix:suffix` form in the contraindication-name slot; glues the colon token into a single qualified identifier string.
+- **Bug 4 — unknown REQUIRES directive silently terminates block**: any unrecognised keyword or bare_word inside a REQUIRES block now produces a `ParseError` with type `invalid_structure`: "Unknown REQUIRES directive: '...'. Recognized: contraindication, fitness, equipment, age, time_commitment."
+- **Bug 5 — `trigger completion` (no-arg) swallows subsequent sections**: `parse_trigger` now emits a `ParseError` with type `invalid_structure`: "Unsupported checkpoint trigger 'completion' — use 'at N weeks' or 'at N days'."
+- **Bug 6 — unknown phase type silently drops the phase**: `parse_phase` detects non-recognized type keywords and emits a `ParseError` with type `invalid_structure`: "Unknown phase type '<x>'. Allowed: accumulation, intensification, realization, deload, base, build, peak, recovery, transition."
+- **Bug 7 — `jogging 10m` in cooldown produces malformed recovery_exercise + phantom `m` orphan**: the cooldown block parser now routes `<bare_word> <number> <time_unit> EOL` to an inline `CardioActivity` with `modality`, `cardio_type: :continuous`, and `total_duration` populated correctly.
+
+### Added
+
+- **Invalid-parser conformance runner**: `conformance_test.exs` now also iterates `wpl/conformance/invalid/parser/` fixtures, verifying that `WplAi.Parser.parse/1` returns `{:error, ...}` with errors matching the expected `type` and `message` fields.
+
 ## [1.6.5] — 2026-05-05
 
 ### Fixed
