@@ -7,6 +7,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.2] — 2026-05-05
+
+### Fixed
+
+- **Bug 1 — Structured `tempo` emit** — `tempo 3 - 1 - 1 - 0` (and `3-0-X-1` forms) now emits the structured object `{eccentric, pause_bottom, concentric, pause_top}` instead of a raw string. `X` in the concentric position sets `explosive_concentric: true` (TS parity).
+- **Bug 2 — `weight N% bw` unit field** — `percentage_bodyweight` weight spec now emits `unit: "bw"` instead of `unit: "%"` (TS parity).
+- **Bug 3 — Calories `kcal` unit omitted** — when calorie unit is `"kcal"` (the schema default), the `unit` field is now omitted from the compiled output. Only `kcal_per_kg` and `multiplier_of_tdee` are emitted (TS parity).
+- **Bug 4 — Nutrition timing `at_time` maps to `type: "absolute"`** — `timing at 07:30` now emits `{type: "absolute", time: "07:30"}` (with no seconds, no offset field). Previously emitted `{type: "at_time", time: "07:30:00"}` (TS parity).
+- **Bug 5 — Nutrition timing `before_workout`/`after_workout` drops body content** — `before_workout` and `after_workout` were not in the keywords list, causing them to be tokenized as bare words and break the timing parser. Adding them to the lexer keyword list restores full body parsing after a timing directive (TS parity).
+- **Bug 6 — Habit `prescription` nesting** — habit activities now nest `target`, `frequency`, and `reminder_times` under a `prescription` key instead of emitting them flat on the activity. Also fixed a parser bug where parsing `frequency` in a habit body called `parse_plan_habit_body` instead of `parse_habit_body`, silently dropping `reminders` (TS parity).
+- **Bug 7 — `bodyweight` keyword as exercise modifier** — bare `bodyweight` after reps/sets (e.g., `pull_up 3x8 bodyweight`) now attaches as `weight: {type: "bodyweight"}` on the exercise prescription instead of generating a phantom `SimpleActivity` (TS parity).
+
 ## [1.6.1] — 2026-05-04
 
 ### Fixed
