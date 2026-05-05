@@ -46,7 +46,7 @@ defmodule WplAi do
 
   """
 
-  alias WplAi.{AST, Compiler, Decompiler, Errors, Lexer, Parser}
+  alias WplAi.{AST, Compiler, Decompiler, Errors, Lexer, Parser, Validator}
 
   @doc """
   Parse WPL-AI source text into an AST.
@@ -222,6 +222,26 @@ defmodule WplAi do
       {:ok, _} -> :ok
       {:error, errors} -> {:error, errors}
     end
+  end
+
+  @doc """
+  Run semantic validation on a parsed AST document, returning a list of warnings.
+
+  Warnings (not errors) are emitted for vocabulary values that don't match known
+  WPL schema enums — e.g. unknown measurement metrics or questionnaire identifiers.
+  The plan is still valid and compilable; warnings are advisory only.
+
+  ## Examples
+
+      iex> {:ok, doc} = WplAi.parse(source)
+      iex> warnings = WplAi.validate_semantics(doc)
+      iex> Enum.filter(warnings, &String.contains?(&1.message, "measurement metric"))
+      []
+
+  """
+  @spec validate_semantics(AST.Document.t()) :: [Validator.warning()]
+  def validate_semantics(%AST.Document{} = doc) do
+    Validator.validate_semantics(doc)
   end
 
   @doc """
