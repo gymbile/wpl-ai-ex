@@ -31,3 +31,7 @@ wpl_ai-*.tar
 
 # Compiled beam files
 *.beam
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

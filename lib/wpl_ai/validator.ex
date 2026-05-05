@@ -93,17 +93,32 @@ defmodule WplAi.Validator do
 
   # String items: validate against combined legacy + v1.6.0 enum vocabulary
   defp validate_measurement(item) when is_binary(item) do
-    check_vocabulary(item, "measurement metric", @all_measurement_metric_set, @all_measurement_metrics)
+    check_vocabulary(
+      item,
+      "measurement metric",
+      @all_measurement_metric_set,
+      @all_measurement_metrics
+    )
   end
 
   # Typed MeasurementSpec (v1.6.0+): validate metric and optionally questionnaire
   defp validate_measurement(%AST.MeasurementSpec{} = spec) do
     metric_warnings =
-      check_vocabulary(spec.metric, "measurement metric", @measurement_metric_set, @measurement_metric_enum)
+      check_vocabulary(
+        spec.metric,
+        "measurement metric",
+        @measurement_metric_set,
+        @measurement_metric_enum
+      )
 
     questionnaire_warnings =
       if spec.metric == "questionnaire_score" && spec.questionnaire do
-        check_vocabulary(spec.questionnaire, "questionnaire", @questionnaire_set, @questionnaire_values)
+        check_vocabulary(
+          spec.questionnaire,
+          "questionnaire",
+          @questionnaire_set,
+          @questionnaire_values
+        )
       else
         []
       end
@@ -142,7 +157,9 @@ defmodule WplAi.Validator do
     max_dist = max(2, div(String.length(value_lower), 3))
 
     all_values
-    |> Enum.map(fn candidate -> {candidate, levenshtein(value_lower, String.downcase(candidate))} end)
+    |> Enum.map(fn candidate ->
+      {candidate, levenshtein(value_lower, String.downcase(candidate))}
+    end)
     |> Enum.filter(fn {_candidate, dist} -> dist <= max_dist end)
     |> Enum.sort_by(fn {_candidate, dist} -> dist end)
     |> Enum.take(3)
@@ -155,9 +172,15 @@ defmodule WplAi.Validator do
     t_len = String.length(t)
 
     cond do
-      s_len == 0 -> t_len
-      t_len == 0 -> s_len
-      s == t -> 0
+      s_len == 0 ->
+        t_len
+
+      t_len == 0 ->
+        s_len
+
+      s == t ->
+        0
+
       true ->
         s_chars = String.graphemes(s)
         t_chars = String.graphemes(t)
@@ -169,13 +192,17 @@ defmodule WplAi.Validator do
             Enum.with_index(t_chars, 1)
             |> Enum.reduce([i], fn {tc, j}, row_acc ->
               cost = if sc == tc, do: 0, else: 1
-              val = Enum.min([
-                List.last(row_acc) + 1,
-                Enum.at(prev_row, j) + 1,
-                Enum.at(prev_row, j - 1) + cost
-              ])
+
+              val =
+                Enum.min([
+                  List.last(row_acc) + 1,
+                  Enum.at(prev_row, j) + 1,
+                  Enum.at(prev_row, j - 1) + cost
+                ])
+
               row_acc ++ [val]
             end)
+
           new_row
         end)
         |> List.last()
