@@ -599,7 +599,7 @@ defmodule WplAiTest do
       assert {:ok, json} = WplAi.compile(doc)
 
       assert json["$schema"] == "https://wpl.dev/schemas/wpl/v1.schema.json"
-      assert json["version"] == "1.0.0"
+      assert json["version"] == "1.6.0"
       assert json["plan"]["name"] == "Minimal"
       assert json["plan"]["type"] == "workout"
       assert is_binary(json["plan"]["id"])
@@ -1110,7 +1110,7 @@ defmodule WplAiTest do
 
       # Verify top-level structure
       assert json["$schema"] == "https://wpl.dev/schemas/wpl/v1.schema.json"
-      assert json["version"] == "1.0.0"
+      assert json["version"] == "1.6.0"
 
       plan = json["plan"]
 

@@ -29,7 +29,7 @@ defmodule WplAi.Compiler do
 
     json = %{
       "$schema" => "https://wpl.dev/schemas/wpl/v1.schema.json",
-      "version" => "1.0.0",
+      "version" => "1.6.0",
       "plan" => plan
     }
 
@@ -1216,7 +1216,12 @@ defmodule WplAi.Compiler do
     %{"type" => "percentage_bodyweight", "value" => value, "unit" => "%"}
   end
 
-  defp compile_weight(%AST.Weight{type: :percentage_1rm, value: value, unit: unit, metric: metric}) do
+  defp compile_weight(%AST.Weight{
+         type: :percentage_1rm,
+         value: value,
+         unit: unit,
+         metric: metric
+       }) do
     compiled = %{"type" => "percentage_1rm", "value" => value, "unit" => unit}
     if metric, do: Map.put(compiled, "metric", metric), else: compiled
   end
