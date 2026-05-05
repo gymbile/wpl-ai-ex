@@ -2129,6 +2129,100 @@ defmodule WplAiTest do
     end)
   end
 
+  # ---------------------------------------------------------------------------
+  # Feature: MuscleGroup + MovementPattern (schema v1.3.0)
+  # ---------------------------------------------------------------------------
+
+  describe "parse/1 - muscles + movement_pattern modifiers" do
+    test "parses explicit primary/secondary muscles and movement_pattern on exercise" do
+      source = ~S"""
+      PLAN "Muscles Test"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m:
+              main straight_sets:
+                bench_press 3x8 muscles primary chest secondary triceps, front_delts pattern push_horizontal
+      """
+
+      assert {:ok, doc} = WplAi.parse(source)
+      [[exercise]] = get_activities(doc)
+
+      assert %AST.Exercise{} = exercise
+      assert exercise.exercise_ref == "bench_press"
+      assert exercise.primary_muscles == ["chest"]
+      assert exercise.secondary_muscles == ["triceps", "front_delts"]
+      assert exercise.movement_pattern == "push_horizontal"
+    end
+
+    test "parses shorthand muscle list (all primary, no secondary)" do
+      source = ~S"""
+      PLAN "Muscles Shorthand"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m:
+              main straight_sets:
+                push_up 3x10 muscles chest, triceps, front_delts pattern push_horizontal
+      """
+
+      assert {:ok, doc} = WplAi.parse(source)
+      [[exercise]] = get_activities(doc)
+
+      assert exercise.primary_muscles == ["chest", "triceps", "front_delts"]
+      assert exercise.secondary_muscles == []
+      assert exercise.movement_pattern == "push_horizontal"
+    end
+  end
+
+  describe "compile/1 - muscles + movement_pattern modifiers" do
+    test "emits primary_muscles, secondary_muscles, movement_pattern on ExerciseActivity" do
+      source = ~S"""
+      PLAN "Muscles Compile"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m:
+              main straight_sets:
+                squat 4x5 muscles primary quadriceps, glutes secondary hamstrings pattern squat
+      """
+
+      assert {:ok, json} = WplAi.to_wpl(source)
+      [[activity]] = get_json_activities(json)
+
+      assert activity["primary_muscles"] == ["quadriceps", "glutes"]
+      assert activity["secondary_muscles"] == ["hamstrings"]
+      assert activity["movement_pattern"] == "squat"
+    end
+
+    test "omits muscle/pattern fields when not specified" do
+      source = ~S"""
+      PLAN "No Muscles"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m:
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:ok, json} = WplAi.to_wpl(source)
+      [[activity]] = get_json_activities(json)
+
+      refute Map.has_key?(activity, "primary_muscles")
+      refute Map.has_key?(activity, "secondary_muscles")
+      refute Map.has_key?(activity, "movement_pattern")
+    end
+  end
+
   # Helper function to extract activities from compiled JSON
   defp get_json_activities(json) do
     json["plan"]["phases"]

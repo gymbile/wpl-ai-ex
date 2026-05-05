@@ -22,6 +22,7 @@ defmodule WplAi.AST do
       :progress,
       :notifications,
       :rendering,
+      :athlete_thresholds,
       meta: %{}
     ]
 
@@ -35,7 +36,44 @@ defmodule WplAi.AST do
             progress: Progress.t() | nil,
             notifications: [Notification.t()] | nil,
             rendering: Rendering.t() | nil,
+            athlete_thresholds: AthleteThresholds.t() | nil,
             meta: map()
+          }
+  end
+
+  defmodule OneRMEntry do
+    @moduledoc "One-rep-max entry for a specific exercise"
+    defstruct [:exercise_ref, :value, :unit]
+
+    @type t :: %__MODULE__{
+            exercise_ref: String.t(),
+            value: number(),
+            unit: String.t()
+          }
+  end
+
+  defmodule AthleteThresholds do
+    @moduledoc "Athlete physiological thresholds (plan-level, schema v1.3.0+)"
+    defstruct [
+      :hr_max_bpm,
+      :lthr_bpm,
+      :resting_hr_bpm,
+      :ftp_watts,
+      :vo2max_ml_kg_min,
+      :critical_pace_seconds_per_km,
+      :body_weight_kg,
+      :one_rm
+    ]
+
+    @type t :: %__MODULE__{
+            hr_max_bpm: integer() | nil,
+            lthr_bpm: integer() | nil,
+            resting_hr_bpm: integer() | nil,
+            ftp_watts: number() | nil,
+            vo2max_ml_kg_min: number() | nil,
+            critical_pace_seconds_per_km: number() | nil,
+            body_weight_kg: number() | nil,
+            one_rm: [OneRMEntry.t()] | nil
           }
   end
 
@@ -397,6 +435,9 @@ defmodule WplAi.AST do
       :tempo,
       :rest,
       :weight,
+      :primary_muscles,
+      :secondary_muscles,
+      :movement_pattern,
       meta: %{}
     ]
 
@@ -412,6 +453,9 @@ defmodule WplAi.AST do
             tempo: String.t() | nil,
             rest: Duration.t() | nil,
             weight: Weight.t() | nil,
+            primary_muscles: [String.t()] | nil,
+            secondary_muscles: [String.t()] | nil,
+            movement_pattern: String.t() | nil,
             meta: map()
           }
   end
@@ -456,14 +500,15 @@ defmodule WplAi.AST do
 
   defmodule Intensity do
     @moduledoc "Intensity specification"
-    defstruct [:type, :value, :range]
+    defstruct [:type, :value, :range, :zone_model]
 
-    @type intensity_type :: :rpe | :heart_rate_zone | :bpm | :pace
+    @type intensity_type :: :rpe | :heart_rate_zone | :bpm | :pace | :power
 
     @type t :: %__MODULE__{
             type: intensity_type(),
             value: number() | String.t() | nil,
-            range: {number(), number()} | nil
+            range: {number(), number()} | nil,
+            zone_model: String.t() | nil
           }
   end
 

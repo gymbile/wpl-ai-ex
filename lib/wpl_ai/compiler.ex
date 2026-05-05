@@ -665,6 +665,28 @@ defmodule WplAi.Compiler do
         compiled
       end
 
+    # Muscle / movement-pattern tagging (schema v1.3.0+)
+    compiled =
+      if ex.primary_muscles && ex.primary_muscles != [] do
+        Map.put(compiled, "primary_muscles", ex.primary_muscles)
+      else
+        compiled
+      end
+
+    compiled =
+      if ex.secondary_muscles && ex.secondary_muscles != [] do
+        Map.put(compiled, "secondary_muscles", ex.secondary_muscles)
+      else
+        compiled
+      end
+
+    compiled =
+      if ex.movement_pattern do
+        Map.put(compiled, "movement_pattern", ex.movement_pattern)
+      else
+        compiled
+      end
+
     compiled
   end
 

@@ -101,6 +101,17 @@ defmodule WplAi.Lexer do
     rules types
     work
     x
+    muscles model
+    chest upper_back lats traps front_delts side_delts rear_delts
+    biceps triceps forearms abs obliques lower_back spinal_erectors
+    glutes quadriceps hamstrings calves hip_adductors hip_abductors hip_flexors neck
+    squat hinge lunge push_horizontal push_vertical pull_horizontal pull_vertical
+    carry rotate anti_rotate gait jump isolation
+    hr_3_zone_seiler hr_5_zone hr_7_zone power_coggan_7_zone pace_critical_speed rpe_borg_10 rpe_borg_20
+    ATHLETE_THRESHOLDS
+    hr_max lthr resting_hr ftp vo2max critical_pace body_weight one_rm
+    watts
+    pattern
   )a
 
   @doc """

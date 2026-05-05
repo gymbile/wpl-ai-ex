@@ -2011,6 +2011,45 @@ defmodule WplAi.Parser do
            ] ->
         {attrs, Enum.reverse(activities), state}
 
+      # Keywords that are valid exercise names (e.g. muscle/movement-pattern
+      # vocabulary terms like `squat`, `lunge`, `chest` that the lexer now
+      # classifies as keywords). Attempt to parse them as exercises.
+      {:keyword, word, _}
+      when word not in [
+             "DAY",
+             "WEEK",
+             "PHASE",
+             "warmup",
+             "main",
+             "cooldown",
+             "nutrition",
+             "meditation",
+             "education",
+             "assessment",
+             "cardio",
+             "habit",
+             "recovery",
+             "rounds",
+             "rest_between_rounds",
+             "PHASES",
+             "GOALS",
+             "REQUIRES",
+             "PERSONALIZATION",
+             "PROGRESS",
+             "NOTIFICATIONS",
+             "RENDERING",
+             "HABITS",
+             "ATHLETE_THRESHOLDS"
+           ] ->
+        {:ok, activity, state} =
+          if block_type == :cooldown do
+            parse_recovery_exercise(state)
+          else
+            parse_exercise_or_simple_activity(state)
+          end
+
+        parse_block_body(state, attrs, [activity | activities], block_type)
+
       # Stray tokens leaking from a malformed exercise line (e.g.
       # `bird_dog 3x10 each side rpe 7` leaves `rpe 7` after exercise
       # parsing gives up). Previously we returned here, but then the
@@ -2047,7 +2086,10 @@ defmodule WplAi.Parser do
               rir: modifiers[:rir],
               tempo: modifiers[:tempo],
               rest: modifiers[:rest],
-              weight: modifiers[:weight]
+              weight: modifiers[:weight],
+              primary_muscles: modifiers[:primary_muscles],
+              secondary_muscles: modifiers[:secondary_muscles],
+              movement_pattern: modifiers[:movement_pattern]
             }
 
             {:ok, exercise, state}
@@ -2067,7 +2109,10 @@ defmodule WplAi.Parser do
               rir: modifiers[:rir],
               tempo: modifiers[:tempo],
               rest: modifiers[:rest],
-              weight: modifiers[:weight]
+              weight: modifiers[:weight],
+              primary_muscles: modifiers[:primary_muscles],
+              secondary_muscles: modifiers[:secondary_muscles],
+              movement_pattern: modifiers[:movement_pattern]
             }
 
             {:ok, exercise, state}
@@ -2174,6 +2219,14 @@ defmodule WplAi.Parser do
   # parse_block_body saw them as new exercises, and the UI showed phantom
   # "each", "side", "per", "leg" items beside real exercises.
   @exercise_qualifiers ~w(each per side sides leg legs arm arms both left right)
+
+  @muscle_groups ~w(chest upper_back lats traps front_delts side_delts rear_delts
+    biceps triceps forearms abs obliques lower_back spinal_erectors
+    glutes quadriceps hamstrings calves hip_adductors hip_abductors hip_flexors neck)
+
+  @movement_patterns ~w(squat hinge lunge push_horizontal push_vertical
+    pull_horizontal pull_vertical carry rotate anti_rotate gait jump isolation)
+
   defp parse_exercise_modifiers(state, modifiers) do
     state = skip_exercise_qualifiers(state)
 
@@ -2208,8 +2261,83 @@ defmodule WplAi.Parser do
         {:ok, name, state} = expect_string(state)
         parse_exercise_modifiers(state, Map.put(modifiers, :name, name))
 
+      {:keyword, "muscles", _} ->
+        state = advance(state)
+        {primary, secondary, state} = parse_muscle_spec(state)
+
+        modifiers =
+          modifiers
+          |> Map.put(:primary_muscles, primary)
+          |> Map.put(:secondary_muscles, secondary)
+
+        parse_exercise_modifiers(state, modifiers)
+
+      {:keyword, "pattern", _} ->
+        state = advance(state)
+        {pattern, state} = parse_movement_pattern(state)
+        parse_exercise_modifiers(state, Map.put(modifiers, :movement_pattern, pattern))
+
       _ ->
         {modifiers, state}
+    end
+  end
+
+  # Parses the muscle spec after the `muscles` keyword.
+  # Two forms:
+  #   muscles chest, triceps                            — all primary, no secondary
+  #   muscles primary chest secondary triceps, front_delts
+  defp parse_muscle_spec(state) do
+    case current_token(state) do
+      {:keyword, "primary", _} ->
+        state = advance(state)
+        {primary, state} = parse_muscle_list(state)
+
+        {secondary, state} =
+          case current_token(state) do
+            {:keyword, "secondary", _} ->
+              state = advance(state)
+              parse_muscle_list(state)
+
+            _ ->
+              {[], state}
+          end
+
+        {primary, secondary, state}
+
+      _ ->
+        # Shorthand: all primary
+        {primary, state} = parse_muscle_list(state)
+        {primary, [], state}
+    end
+  end
+
+  # Parses a comma-separated list of muscle group tokens.
+  defp parse_muscle_list(state, acc \\ []) do
+    case current_token(state) do
+      {tag, value, _} when tag in [:keyword, :bare_word] and value in @muscle_groups ->
+        state = advance(state)
+
+        case current_token(state) do
+          {:comma, _, _} ->
+            parse_muscle_list(advance(state), [value | acc])
+
+          _ ->
+            {Enum.reverse([value | acc]), state}
+        end
+
+      _ ->
+        {Enum.reverse(acc), state}
+    end
+  end
+
+  # Parses a single movement pattern token.
+  defp parse_movement_pattern(state) do
+    case current_token(state) do
+      {tag, value, _} when tag in [:keyword, :bare_word] and value in @movement_patterns ->
+        {value, advance(state)}
+
+      _ ->
+        {nil, state}
     end
   end
 
