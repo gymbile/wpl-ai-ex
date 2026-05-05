@@ -73,9 +73,14 @@ defmodule WplAi.Compiler do
   end
 
   defp compile_metadata(%AST.Header{} = header) do
+    # Default language to "en" (TS parity — TS parser always sets language: "en"
+    # when not specified; Elixir parser leaves it nil, so we default here).
+    language = header.language || "en"
+
     metadata = %{
       "created_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "updated_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+      "updated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "language" => language
     }
 
     metadata =
@@ -88,13 +93,6 @@ defmodule WplAi.Compiler do
     metadata =
       if header.difficulty do
         Map.put(metadata, "difficulty", to_string(header.difficulty))
-      else
-        metadata
-      end
-
-    metadata =
-      if header.language do
-        Map.put(metadata, "language", header.language)
       else
         metadata
       end
@@ -661,15 +659,9 @@ defmodule WplAi.Compiler do
     compiled = %{
       "id" => "exercise_#{index}",
       "type" => "exercise",
-      "exercise_ref" => ex.exercise_ref
+      "exercise_ref" => ex.exercise_ref,
+      "name" => ex.name || humanise(ex.exercise_ref)
     }
-
-    compiled =
-      if ex.name do
-        Map.put(compiled, "name", ex.name)
-      else
-        compiled
-      end
 
     # Build prescription
     prescription = %{}
@@ -783,6 +775,7 @@ defmodule WplAi.Compiler do
     compiled = %{
       "id" => "cardio_#{index}",
       "type" => "cardio",
+      "name" => humanise(cardio.modality),
       "modality" => cardio.modality
     }
 
@@ -829,21 +822,16 @@ defmodule WplAi.Compiler do
   end
 
   defp compile_activity(%AST.Nutrition{} = nutrition, index) do
+    # Auto-derive name from category when no explicit name is given (TS parity).
+    # Explicit nutrition.name (e.g. a quoted food identifier) takes priority.
+    name = nutrition.name || humanise(nutrition.category)
+
     compiled = %{
       "id" => "nutrition_#{index}",
       "type" => "nutrition",
+      "name" => name,
       "category" => to_string(nutrition.category)
     }
-
-    # Carry the food identifier (e.g. "smoothie_bowl") so the trainer UI
-    # can render it as the meal's name. Plan rendering falls back to
-    # exercise_ref/activity_row rendering, which reads "name" first.
-    compiled =
-      if nutrition.name do
-        Map.put(compiled, "name", nutrition.name)
-      else
-        compiled
-      end
 
     # Build prescription
     prescription = %{}
@@ -890,6 +878,7 @@ defmodule WplAi.Compiler do
     compiled = %{
       "id" => "meditation_#{index}",
       "type" => "meditation",
+      "name" => "#{humanise(meditation.category)} Meditation",
       "category" => to_string(meditation.category)
     }
 
@@ -917,9 +906,18 @@ defmodule WplAi.Compiler do
   end
 
   defp compile_activity(%AST.Recovery{} = recovery, index) do
+    # Normalise cooldown -> stretching for the display name (TS parity).
+    # The parser uses "cooldown" as a synthetic category for cooldown-block
+    # stretches; schema-wise the canonical category is "stretching".
+    display_category =
+      if recovery.category == :cooldown or recovery.category == "cooldown",
+        do: "stretching",
+        else: recovery.category
+
     compiled = %{
       "id" => "recovery_#{index}",
       "type" => "recovery",
+      "name" => humanise(display_category),
       "category" => to_string(recovery.category)
     }
 
@@ -1011,6 +1009,7 @@ defmodule WplAi.Compiler do
     compiled = %{
       "id" => "habit_#{index}",
       "type" => "habit",
+      "name" => humanise(habit.category),
       "category" => to_string(habit.category)
     }
 
@@ -1047,7 +1046,7 @@ defmodule WplAi.Compiler do
     compiled = %{
       "id" => "activity_#{index}",
       "type" => "simple",
-      "name" => simple.name
+      "name" => humanise(simple.name)
     }
 
     compiled =
@@ -1329,6 +1328,36 @@ defmodule WplAi.Compiler do
 
   defp humanize_category(category) when is_atom(category) do
     category |> to_string() |> humanize_category()
+  end
+
+  # Known acronyms that should be all-caps (mirrors TS ACRONYMS set).
+  @acronyms ~w[hiit amrap emom rpe rir 1rm]
+
+  @doc false
+  # Convert a snake_case / kebab-case slug into a Title Cased human-readable
+  # name. Special-cases a fixed set of well-known acronyms (HIIT, AMRAP, …).
+  # Mirrors the TS `humanise` helper in wpl-ai/src/compiler.ts.
+  defp humanise(nil), do: ""
+  defp humanise(""), do: ""
+
+  defp humanise(slug) when is_binary(slug) do
+    slug
+    |> String.split(~r/[_\s\-]+/)
+    |> Enum.filter(&(&1 != ""))
+    |> Enum.map(fn word ->
+      lower = String.downcase(word)
+
+      if lower in @acronyms do
+        String.upcase(lower)
+      else
+        String.capitalize(lower)
+      end
+    end)
+    |> Enum.join(" ")
+  end
+
+  defp humanise(slug) when is_atom(slug) do
+    slug |> to_string() |> humanise()
   end
 
   defp day_name_to_number(name) when is_binary(name) do

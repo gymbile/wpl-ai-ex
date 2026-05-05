@@ -22,7 +22,6 @@ defmodule WplAi.ConformanceTest do
   # Normalization
   # ---------------------------------------------------------------------------
 
-  @strip_name_types ~w[exercise cardio nutrition recovery]
   @auto_id_re ~r/^[a-z0-9_]+_\d+$|^[a-z0-9_]+_block$/
   @uuid_re ~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
@@ -33,36 +32,32 @@ defmodule WplAi.ConformanceTest do
     1. Map keys sorted alphabetically.
     2. ID strings matching auto-numbered pattern → "<AUTO_ID>".
     3. UUID-format ID strings → "<UUID>".
-    4. metadata.created_at / updated_at / language → removed.
-    5. `name` on activity objects (exercise/cardio/nutrition/recovery) → removed.
-    6. Whole-number floats → integers (1.0 → 1).
-  """
-  def normalize_value(value, parent_key \\ nil, in_activity \\ false)
+    4. metadata.created_at / updated_at → removed (runtime timestamps).
+    5. Whole-number floats → integers (1.0 → 1).
 
-  def normalize_value(map, parent_key, in_activity) when is_map(map) do
+  Note: `metadata.language` and activity `name` fields are no longer stripped.
+  Both compilers now emit these identically (TS parity as of wpl-ai-ex v1.6.1).
+  """
+  def normalize_value(value, parent_key \\ nil)
+
+  def normalize_value(map, parent_key) when is_map(map) do
     map
     |> Enum.sort_by(&elem(&1, 0))
     |> Enum.reduce(%{}, fn {k, v}, acc ->
-      # 4. Strip metadata runtime and language fields
-      if parent_key == "metadata" and k in ["created_at", "updated_at", "language"] do
+      # 4. Strip metadata runtime timestamp fields only
+      if parent_key == "metadata" and k in ["created_at", "updated_at"] do
         acc
       else
-        # 5. Strip auto-derived display name from activity objects
-        if k == "name" and in_activity and Map.get(map, "type") in @strip_name_types do
-          acc
-        else
-          child_in_activity = k == "activities"
-          Map.put(acc, k, normalize_value(v, k, child_in_activity))
-        end
+        Map.put(acc, k, normalize_value(v, k))
       end
     end)
   end
 
-  def normalize_value(list, _parent_key, in_activity) when is_list(list) do
-    Enum.map(list, &normalize_value(&1, nil, in_activity))
+  def normalize_value(list, _parent_key) when is_list(list) do
+    Enum.map(list, &normalize_value(&1, nil))
   end
 
-  def normalize_value(value, "id", _in_activity) when is_binary(value) do
+  def normalize_value(value, "id") when is_binary(value) do
     cond do
       Regex.match?(@auto_id_re, value) -> "<AUTO_ID>"
       Regex.match?(@uuid_re, value) -> "<UUID>"
@@ -70,25 +65,26 @@ defmodule WplAi.ConformanceTest do
     end
   end
 
-  # 6. Coerce whole-number floats to integers
-  def normalize_value(value, _parent_key, _in_activity) when is_float(value) do
+  # 5. Coerce whole-number floats to integers
+  def normalize_value(value, _parent_key) when is_float(value) do
     truncated = trunc(value)
     if value == truncated * 1.0, do: truncated, else: value
   end
 
-  def normalize_value(value, _parent_key, _in_activity), do: value
+  def normalize_value(value, _parent_key), do: value
 
   # ---------------------------------------------------------------------------
   # Per-fixture test registration
   # ---------------------------------------------------------------------------
 
-  fixtures = Path.expand("../../wpl/conformance/compile/fixtures", __DIR__)
-             |> then(fn dir ->
-               case System.get_env("WPL_CORPUS_DIR") do
-                 nil -> dir
-                 env_dir -> env_dir
-               end
-             end)
+  fixtures =
+    Path.expand("../../wpl/conformance/compile/fixtures", __DIR__)
+    |> then(fn dir ->
+      case System.get_env("WPL_CORPUS_DIR") do
+        nil -> dir
+        env_dir -> env_dir
+      end
+    end)
 
   all_fixtures =
     if File.dir?(fixtures) do
@@ -97,6 +93,7 @@ defmodule WplAi.ConformanceTest do
       |> Enum.sort()
       |> Enum.flat_map(fn category ->
         category_dir = Path.join(fixtures, category)
+
         if File.dir?(category_dir) do
           category_dir
           |> File.ls!()
@@ -105,7 +102,9 @@ defmodule WplAi.ConformanceTest do
             fixture_dir = Path.join(category_dir, name)
             source_file = Path.join(fixture_dir, "source.wpl")
             expected_file = Path.join(fixture_dir, "expected.json")
-            if File.dir?(fixture_dir) and File.exists?(source_file) and File.exists?(expected_file) do
+
+            if File.dir?(fixture_dir) and File.exists?(source_file) and
+                 File.exists?(expected_file) do
               [{category <> "/" <> name, source_file, expected_file}]
             else
               []

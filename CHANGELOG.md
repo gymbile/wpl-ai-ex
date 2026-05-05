@@ -7,6 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-05-04
+
+### Fixed
+- **`metadata.language` default** — compiler now always emits `metadata.language: "en"` when the DSL does not specify a language, matching TS compiler behaviour (TS parity).
+- **Auto-derived activity display `name`** — compiler now derives `name` from the exercise_ref / modality / category token for Exercise, Cardio, Nutrition, Meditation, Recovery, and Habit activities, matching the TS `humanise()` helper exactly. Acronyms (HIIT, AMRAP, EMOM, RPE, RIR, 1RM) are uppercased; all other words are title-cased. Explicit `name` set in the DSL is preserved as-is (TS parity).
+
 ## [1.6.0] — 2026-05-05
 
 ### Added
