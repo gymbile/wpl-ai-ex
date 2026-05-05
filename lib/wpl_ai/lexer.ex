@@ -101,7 +101,7 @@ defmodule WplAi.Lexer do
     rules types
     work
     x
-    muscles model
+    muscles model power
     chest upper_back lats traps front_delts side_delts rear_delts
     biceps triceps forearms abs obliques lower_back spinal_erectors
     glutes quadriceps hamstrings calves hip_adductors hip_abductors hip_flexors neck

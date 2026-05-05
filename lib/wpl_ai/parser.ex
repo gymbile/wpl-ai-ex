@@ -2448,12 +2448,30 @@ defmodule WplAi.Parser do
         _ -> :continuous
       end
 
+    # Propagate zone_model (if present) into the intensity field (schema v1.3.0+).
+    intensity =
+      case {attrs[:intensity], attrs[:zone_model]} do
+        {nil, zone_model} when zone_model != nil ->
+          %AST.Intensity{
+            type: :heart_rate_zone,
+            value: attrs[:zone],
+            range: nil,
+            zone_model: zone_model
+          }
+
+        {intensity, zone_model} when intensity != nil and zone_model != nil ->
+          %{intensity | zone_model: zone_model}
+
+        {intensity, _} ->
+          intensity
+      end
+
     cardio = %AST.Cardio{
       modality: modality,
       cardio_type: cardio_type_atom,
       total_duration: attrs[:total_duration],
       zone: attrs[:zone],
-      intensity: attrs[:intensity],
+      intensity: intensity,
       intervals: attrs[:intervals]
     }
 
@@ -2472,7 +2490,27 @@ defmodule WplAi.Parser do
       {:keyword, "zone", _} ->
         state = advance(state)
         {:ok, zone, state} = expect_number(state)
-        parse_cardio_body(state, Map.put(attrs, :zone, trunc(zone)))
+        attrs = Map.put(attrs, :zone, trunc(zone))
+
+        # Optional `model <zone_model>` qualifier (schema v1.3.0+).
+        {attrs, state} =
+          case current_token(state) do
+            {:keyword, "model", _} ->
+              state = advance(state)
+
+              case current_token(state) do
+                {tag, value, _} when tag in [:keyword, :bare_word] ->
+                  {Map.put(attrs, :zone_model, value), advance(state)}
+
+                _ ->
+                  {attrs, state}
+              end
+
+            _ ->
+              {attrs, state}
+          end
+
+        parse_cardio_body(state, attrs)
 
       {:keyword, "intensity", _} ->
         state = advance(state)
@@ -2528,6 +2566,13 @@ defmodule WplAi.Parser do
         state = advance(state)
         {:ok, pace, state} = expect_string(state)
         intensity = %AST.Intensity{type: :pace, value: pace, range: nil}
+        {:ok, intensity, state}
+
+      # intensity power N (schema v1.3.0+)
+      {:keyword, "power", _} ->
+        state = advance(state)
+        {:ok, value, state} = expect_number(state)
+        intensity = %AST.Intensity{type: :power, value: value, range: nil}
         {:ok, intensity, state}
 
       _ ->

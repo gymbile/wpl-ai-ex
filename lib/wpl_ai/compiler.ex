@@ -711,9 +711,22 @@ defmodule WplAi.Compiler do
 
     prescription =
       if cardio.zone do
-        Map.put(prescription, "intensity", %{"type" => "heart_rate_zone", "zone" => cardio.zone})
+        intensity_map = %{"type" => "heart_rate_zone", "zone" => cardio.zone}
+
+        intensity_map =
+          if cardio.intensity && cardio.intensity.zone_model do
+            Map.put(intensity_map, "zone_model", cardio.intensity.zone_model)
+          else
+            intensity_map
+          end
+
+        Map.put(prescription, "intensity", intensity_map)
       else
-        prescription
+        if cardio.intensity do
+          Map.put(prescription, "intensity", compile_cardio_intensity(cardio.intensity))
+        else
+          prescription
+        end
       end
 
     prescription =
@@ -1040,6 +1053,18 @@ defmodule WplAi.Compiler do
 
   defp compile_weight(%AST.Weight{value: value, unit: unit}) do
     %{"type" => "absolute", "value" => value, "unit" => unit}
+  end
+
+  defp compile_cardio_intensity(%AST.Intensity{type: :bpm, range: {min, max}}) do
+    %{"type" => "bpm", "min_bpm" => min, "max_bpm" => max}
+  end
+
+  defp compile_cardio_intensity(%AST.Intensity{type: :power, value: value}) do
+    %{"type" => "power", "value" => value}
+  end
+
+  defp compile_cardio_intensity(%AST.Intensity{type: type, value: value}) do
+    %{"type" => to_string(type), "value" => value}
   end
 
   defp compile_intervals(%AST.IntervalPattern{} = pattern) do

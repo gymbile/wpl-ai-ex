@@ -2130,6 +2130,129 @@ defmodule WplAiTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Feature: Cardio zone_model + power/bpm intensity types (schema v1.3.0)
+  # ---------------------------------------------------------------------------
+
+  describe "parse/1 - cardio zone N model M" do
+    test "parses zone with model qualifier into Cardio.intensity.zone_model" do
+      source = ~S"""
+      PLAN "Zone Model Test"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 60m:
+              main:
+                cardio running continuous:
+                  total 60 minutes
+                  zone 1 model hr_3_zone_seiler
+      """
+
+      assert {:ok, doc} = WplAi.parse(source)
+      [[cardio]] = get_activities(doc)
+
+      assert %AST.Cardio{} = cardio
+      assert cardio.zone == 1
+      assert cardio.intensity != nil
+      assert cardio.intensity.zone_model == "hr_3_zone_seiler"
+    end
+
+    test "parses zone without model (no zone_model set)" do
+      source = ~S"""
+      PLAN "Zone No Model"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 60m:
+              main:
+                cardio running continuous:
+                  total 60 minutes
+                  zone 3
+      """
+
+      assert {:ok, doc} = WplAi.parse(source)
+      [[cardio]] = get_activities(doc)
+
+      assert cardio.zone == 3
+      assert cardio.intensity == nil || is_nil(cardio.intensity.zone_model)
+    end
+
+    test "parses intensity type power N" do
+      source = ~S"""
+      PLAN "Power Intensity"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 60m:
+              main:
+                cardio cycling continuous:
+                  total 45 minutes
+                  intensity power 250
+      """
+
+      assert {:ok, doc} = WplAi.parse(source)
+      [[cardio]] = get_activities(doc)
+
+      assert cardio.intensity.type == :power
+      assert cardio.intensity.value == 250
+    end
+  end
+
+  describe "compile/1 - cardio zone_model" do
+    test "emits intensity.zone_model when zone N model M is specified" do
+      source = ~S"""
+      PLAN "Zone Model Compile"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 60m:
+              main:
+                cardio running continuous:
+                  total 60 minutes
+                  zone 1 model hr_3_zone_seiler
+      """
+
+      assert {:ok, json} = WplAi.to_wpl(source)
+      [[activity]] = get_json_activities(json)
+
+      intensity = activity["prescription"]["intensity"]
+      assert intensity["type"] == "heart_rate_zone"
+      assert intensity["zone"] == 1
+      assert intensity["zone_model"] == "hr_3_zone_seiler"
+    end
+
+    test "emits intensity with type power" do
+      source = ~S"""
+      PLAN "Power Compile"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 60m:
+              main:
+                cardio cycling continuous:
+                  total 45 minutes
+                  intensity power 250
+      """
+
+      assert {:ok, json} = WplAi.to_wpl(source)
+      [[activity]] = get_json_activities(json)
+
+      intensity = activity["prescription"]["intensity"]
+      assert intensity["type"] == "power"
+      assert intensity["value"] == 250
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Feature: MuscleGroup + MovementPattern (schema v1.3.0)
   # ---------------------------------------------------------------------------
 
