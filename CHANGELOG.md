@@ -7,6 +7,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.4] — 2026-05-04
+
+### Added
+
+- **`WplAi.Validator` module** — new semantic validator that walks the AST and emits vocabulary warnings (not errors). Mirrors the TypeScript `validateSemantics` step in `wpl-ai`.
+- **`WplAi.validate_semantics/1`** — public API entry point delegating to `WplAi.Validator.validate_semantics/1`.
+
+### Fixed
+
+- **validator: refresh MeasurementMetric + Questionnaire vocabulary to schema 1.6.0**: `WplAi.Validator` knows the canonical 24-value `MeasurementMetric` enum and the 8-value `Questionnaire` enum; legacy string items are checked against the combined (legacy + enum) set; typed `MeasurementSpec` items have `metric` checked against the enum set, and `questionnaire` (when `metric == "questionnaire_score"`) checked against the questionnaire set.
+
 ## [1.6.3] — 2026-05-04
 
 ### Changed
