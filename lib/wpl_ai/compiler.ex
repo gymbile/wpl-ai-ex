@@ -62,7 +62,8 @@ defmodule WplAi.Compiler do
       "phases" => compile_phases(doc.phases || []),
       "habits" => compile_plan_habits(doc.habits),
       "progress" => compile_progress(doc.progress),
-      "notifications" => compile_notifications(doc.notifications)
+      "notifications" => compile_notifications(doc.notifications),
+      "athlete_thresholds" => compile_athlete_thresholds(doc.athlete_thresholds)
     }
 
     # Remove nil values
@@ -107,6 +108,63 @@ defmodule WplAi.Compiler do
       end
 
     metadata
+  end
+
+  # =============================================================================
+  # Athlete Thresholds Compilation (schema v1.3.0+)
+  # =============================================================================
+
+  defp compile_athlete_thresholds(nil), do: nil
+
+  defp compile_athlete_thresholds(%AST.AthleteThresholds{} = t) do
+    compiled = %{}
+
+    compiled =
+      if t.hr_max_bpm, do: Map.put(compiled, "hr_max_bpm", t.hr_max_bpm), else: compiled
+
+    compiled =
+      if t.lthr_bpm, do: Map.put(compiled, "lthr_bpm", t.lthr_bpm), else: compiled
+
+    compiled =
+      if t.resting_hr_bpm,
+        do: Map.put(compiled, "resting_hr_bpm", t.resting_hr_bpm),
+        else: compiled
+
+    compiled =
+      if t.ftp_watts, do: Map.put(compiled, "ftp_watts", t.ftp_watts), else: compiled
+
+    compiled =
+      if t.vo2max_ml_kg_min,
+        do: Map.put(compiled, "vo2max_ml_kg_min", t.vo2max_ml_kg_min),
+        else: compiled
+
+    compiled =
+      if t.critical_pace_seconds_per_km,
+        do: Map.put(compiled, "critical_pace_seconds_per_km", t.critical_pace_seconds_per_km),
+        else: compiled
+
+    compiled =
+      if t.body_weight_kg,
+        do: Map.put(compiled, "body_weight_kg", t.body_weight_kg),
+        else: compiled
+
+    compiled =
+      if t.one_rm && t.one_rm != [] do
+        entries =
+          Enum.map(t.one_rm, fn entry ->
+            %{
+              "exercise_ref" => entry.exercise_ref,
+              "value" => entry.value,
+              "unit" => entry.unit
+            }
+          end)
+
+        Map.put(compiled, "one_rm", entries)
+      else
+        compiled
+      end
+
+    if compiled == %{}, do: nil, else: compiled
   end
 
   # =============================================================================

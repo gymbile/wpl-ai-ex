@@ -74,7 +74,8 @@ defmodule WplAi.Parser do
         habits: sections[:habits],
         progress: sections[:progress],
         notifications: sections[:notifications],
-        rendering: sections[:rendering]
+        rendering: sections[:rendering],
+        athlete_thresholds: sections[:athlete_thresholds]
       }
 
       {:ok, document, state}
@@ -249,6 +250,10 @@ defmodule WplAi.Parser do
       {:keyword, "HABITS", _} ->
         {:ok, habits, state} = parse_habits_section(state)
         parse_sections(state, Map.put(sections, :habits, habits))
+
+      {:keyword, "ATHLETE_THRESHOLDS", _} ->
+        {:ok, thresholds, state} = parse_athlete_thresholds_section(state)
+        parse_sections(state, Map.put(sections, :athlete_thresholds, thresholds))
 
       {:eof, _, _} ->
         {:ok, sections, state}
@@ -834,6 +839,113 @@ defmodule WplAi.Parser do
 
       _ ->
         {attrs, state}
+    end
+  end
+
+  # =============================================================================
+  # Athlete Thresholds Section (schema v1.3.0+)
+  # =============================================================================
+
+  defp parse_athlete_thresholds_section(state) do
+    state = advance(state)
+    state = skip_newlines(state)
+
+    case current_token(state) do
+      {:indent, _, _} ->
+        state = advance(state)
+        {out, one_rm, state} = parse_athlete_thresholds_body(state, %{}, [])
+
+        thresholds = %AST.AthleteThresholds{
+          hr_max_bpm: out[:hr_max_bpm],
+          lthr_bpm: out[:lthr_bpm],
+          resting_hr_bpm: out[:resting_hr_bpm],
+          ftp_watts: out[:ftp_watts],
+          vo2max_ml_kg_min: out[:vo2max_ml_kg_min],
+          critical_pace_seconds_per_km: out[:critical_pace_seconds_per_km],
+          body_weight_kg: out[:body_weight_kg],
+          one_rm: if(one_rm == [], do: nil, else: one_rm)
+        }
+
+        {:ok, thresholds, state}
+
+      _ ->
+        {:ok, %AST.AthleteThresholds{}, state}
+    end
+  end
+
+  defp parse_athlete_thresholds_body(state, out, one_rm) do
+    state = skip_newlines(state)
+
+    case current_token(state) do
+      {:dedent, _, _} ->
+        {out, Enum.reverse(one_rm), advance(state)}
+
+      {:eof, _, _} ->
+        {out, Enum.reverse(one_rm), state}
+
+      {tag, field, _} when tag in [:keyword, :bare_word] ->
+        case field do
+          "one_rm" ->
+            state = advance(state)
+            {:ok, exercise_ref, state} = expect_bare_word(state)
+            {:ok, value, state} = expect_number(state)
+            {unit, state} = consume_optional_weight_unit(state)
+
+            entry = %AST.OneRMEntry{
+              exercise_ref: exercise_ref,
+              value: value,
+              unit: unit
+            }
+
+            parse_athlete_thresholds_body(state, out, [entry | one_rm])
+
+          _ ->
+            state = advance(state)
+            {:ok, value, state} = expect_number(state)
+            state = skip_optional_threshold_unit(state)
+
+            out =
+              case field do
+                "hr_max" -> Map.put(out, :hr_max_bpm, trunc(value))
+                "lthr" -> Map.put(out, :lthr_bpm, trunc(value))
+                "resting_hr" -> Map.put(out, :resting_hr_bpm, trunc(value))
+                "ftp" -> Map.put(out, :ftp_watts, value)
+                "vo2max" -> Map.put(out, :vo2max_ml_kg_min, value)
+                "critical_pace" -> Map.put(out, :critical_pace_seconds_per_km, value)
+                "body_weight" -> Map.put(out, :body_weight_kg, value)
+                _ -> out
+              end
+
+            parse_athlete_thresholds_body(state, out, one_rm)
+        end
+
+      _ ->
+        {out, Enum.reverse(one_rm), state}
+    end
+  end
+
+  # Skips an optional descriptive unit token after a threshold value (e.g. "bpm", "watts", "kg").
+  @threshold_units ~w(bpm watts kg lbs)
+  defp skip_optional_threshold_unit(state) do
+    case current_token(state) do
+      {tag, unit, _} when tag in [:keyword, :bare_word] and unit in @threshold_units ->
+        advance(state)
+
+      _ ->
+        state
+    end
+  end
+
+  # Consumes an optional weight unit ("kg" / "lb" / "lbs") after a one_rm value.
+  # Returns {unit, state} where unit defaults to "kg".
+  defp consume_optional_weight_unit(state) do
+    case current_token(state) do
+      {tag, unit, _} when tag in [:keyword, :bare_word] and unit in ["kg", "lb", "lbs"] ->
+        normalized = if unit == "lbs", do: "lb", else: unit
+        {normalized, advance(state)}
+
+      _ ->
+        {"kg", state}
     end
   end
 

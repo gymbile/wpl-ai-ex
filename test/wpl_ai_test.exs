@@ -2130,6 +2130,115 @@ defmodule WplAiTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Feature: ATHLETE_THRESHOLDS top-level block (schema v1.3.0)
+  # ---------------------------------------------------------------------------
+
+  describe "parse/1 - ATHLETE_THRESHOLDS section" do
+    test "parses full ATHLETE_THRESHOLDS block into document.athlete_thresholds" do
+      source = ~S"""
+      PLAN "Thresholds Test"
+      TYPE workout
+
+      ATHLETE_THRESHOLDS
+        hr_max 188 bpm
+        lthr 168 bpm
+        resting_hr 48 bpm
+        ftp 285 watts
+        vo2max 56
+        critical_pace 220
+        body_weight 75 kg
+        one_rm squat 140 kg
+        one_rm bench_press 100 kg
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m:
+              main:
+                squat 3x5
+      """
+
+      assert {:ok, doc} = WplAi.parse(source)
+      at = doc.athlete_thresholds
+
+      assert at != nil
+      assert at.hr_max_bpm == 188
+      assert at.lthr_bpm == 168
+      assert at.resting_hr_bpm == 48
+      assert at.ftp_watts == 285
+      assert at.vo2max_ml_kg_min == 56
+      assert at.critical_pace_seconds_per_km == 220
+      assert at.body_weight_kg == 75
+
+      assert length(at.one_rm) == 2
+      [squat_entry, bench_entry] = at.one_rm
+      assert squat_entry.exercise_ref == "squat"
+      assert squat_entry.value == 140
+      assert squat_entry.unit == "kg"
+      assert bench_entry.exercise_ref == "bench_press"
+      assert bench_entry.value == 100
+      assert bench_entry.unit == "kg"
+    end
+  end
+
+  describe "compile/1 - ATHLETE_THRESHOLDS section" do
+    test "emits plan.athlete_thresholds with all fields" do
+      source = ~S"""
+      PLAN "Thresholds Compile"
+      TYPE workout
+
+      ATHLETE_THRESHOLDS
+        hr_max 188 bpm
+        lthr 168 bpm
+        resting_hr 48 bpm
+        ftp 285 watts
+        body_weight 72 kg
+        one_rm squat 140 kg
+        one_rm bench_press 100 kg
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m:
+              main:
+                push_up 3x10
+      """
+
+      assert {:ok, json} = WplAi.to_wpl(source)
+      at = json["plan"]["athlete_thresholds"]
+
+      assert at != nil
+      assert at["hr_max_bpm"] == 188
+      assert at["lthr_bpm"] == 168
+      assert at["resting_hr_bpm"] == 48
+      assert at["ftp_watts"] == 285
+      assert at["body_weight_kg"] == 72
+
+      assert at["one_rm"] == [
+               %{"exercise_ref" => "squat", "value" => 140, "unit" => "kg"},
+               %{"exercise_ref" => "bench_press", "value" => 100, "unit" => "kg"}
+             ]
+    end
+
+    test "omits athlete_thresholds from plan when section is absent" do
+      source = ~S"""
+      PLAN "No Thresholds"
+      TYPE workout
+
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m:
+              main:
+                push_up 3x10
+      """
+
+      assert {:ok, json} = WplAi.to_wpl(source)
+      refute Map.has_key?(json["plan"], "athlete_thresholds")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Feature: Cardio zone_model + power/bpm intensity types (schema v1.3.0)
   # ---------------------------------------------------------------------------
 
