@@ -560,8 +560,42 @@ defmodule WplAi.Parser do
         state = advance(state)
         {attrs, state}
 
+      # Bug 4 fix: emit an explicit parse error for unknown REQUIRES directives.
+      # Collect all tokens up to the next newline/dedent as the "line text",
+      # emit an invalid_structure error, and continue parsing the block.
       _ ->
-        {attrs, state}
+        {line_text, state} = collect_line_tokens(state)
+        loc = current_location(state)
+
+        error =
+          ParseError.invalid_structure(
+            "Unknown REQUIRES directive: '#{line_text}'. " <>
+              "Recognized: contraindication, fitness, equipment, age, time_commitment.",
+            loc
+          )
+
+        state = %{state | errors: [error | state.errors]}
+        parse_requires_body(state, attrs)
+    end
+  end
+
+  # Collect tokens on the current line into a text string (for error messages).
+  defp collect_line_tokens(state, acc \\ []) do
+    case current_token(state) do
+      {:newline, _, _} ->
+        {acc |> Enum.reverse() |> Enum.join(" "), state}
+
+      {:dedent, _, _} ->
+        {acc |> Enum.reverse() |> Enum.join(" "), state}
+
+      {:eof, _, _} ->
+        {acc |> Enum.reverse() |> Enum.join(" "), state}
+
+      {_type, value, _} when is_binary(value) ->
+        collect_line_tokens(advance(state), [value | acc])
+
+      {_type, value, _} ->
+        collect_line_tokens(advance(state), [to_string(value) | acc])
     end
   end
 
@@ -631,9 +665,26 @@ defmodule WplAi.Parser do
     end
   end
 
+  # Bug 3 fix: accept colon-qualified contraindication names (acsm:cardiac_rehab_phase_2).
+  # The lexer produces bare_word("acsm"), colon, bare_word("cardiac_rehab_phase_2").
+  # Glue them into the single string "acsm:cardiac_rehab_phase_2".
+  defp expect_contraindication_name(state) do
+    {:ok, prefix, state} = expect_bare_word(state)
+
+    case current_token(state) do
+      {:colon, _, _} ->
+        state = advance(state)
+        {:ok, suffix, state} = expect_bare_word(state)
+        {:ok, prefix <> ":" <> suffix, state}
+
+      _ ->
+        {:ok, prefix, state}
+    end
+  end
+
   defp parse_contraindication(state) do
     state = advance(state)
-    {:ok, condition, state} = expect_bare_word(state)
+    {:ok, condition, state} = expect_contraindication_name(state)
 
     # Two forms:
     #   Old: contraindication <name> -> <action> [indented affects block]
@@ -1596,10 +1647,52 @@ defmodule WplAi.Parser do
     {:ok, name, state} = expect_string(state)
 
     # Optional periodization role (schema v1.5.0+): PHASE "Name" accumulation (4 weeks):
+    # Bug 6 fix: detect and reject unknown phase type words with an explicit error.
     {phase_type, state} =
       case current_token(state) do
-        {:keyword, word, _} when word in @phase_types ->
+        {:keyword, word, _loc} when word in @phase_types ->
           {word, advance(state)}
+
+        {:bare_word, word, _loc} when word in @phase_types ->
+          {word, advance(state)}
+
+        # An unrecognised bare_word before the opening paren is an unknown phase type.
+        {:bare_word, word, loc} ->
+          allowed = Enum.join(@phase_types, ", ")
+
+          error =
+            ParseError.invalid_structure(
+              "Unknown phase type '#{word}'. Allowed: #{allowed}.",
+              loc
+            )
+
+          state = %{state | errors: [error | state.errors]}
+          state = advance(state)
+          {nil, state}
+
+        # Same for keyword tokens that are not in the allowed set (e.g. if the
+        # lexer classifies the word as a keyword for another reason).
+        {:keyword, word, loc}
+        when word not in @phase_types and word not in ["WEEK", "PHASE"] ->
+          # Only treat it as an unknown phase type if followed by a paren — otherwise
+          # it might be a real grammar token that `expect_lparen` will handle gracefully.
+          case peek_token(state, 1) do
+            {:lparen, _, _} ->
+              allowed = Enum.join(@phase_types, ", ")
+
+              error =
+                ParseError.invalid_structure(
+                  "Unknown phase type '#{word}'. Allowed: #{allowed}.",
+                  loc
+                )
+
+              state = %{state | errors: [error | state.errors]}
+              state = advance(state)
+              {nil, state}
+
+            _ ->
+              {nil, state}
+          end
 
         _ ->
           {nil, state}
@@ -2189,12 +2282,18 @@ defmodule WplAi.Parser do
         parse_block_body(state, attrs, [activity | activities], block_type)
 
       {:bare_word, _, _} ->
-        # In cooldown blocks, bare words are recovery exercises
+        # In cooldown blocks, bare words are typically recovery exercises.
+        # Bug 7 fix: detect `<bare_word> <number> <time_unit> EOL` in cooldown
+        # context and route to an inline CardioActivity instead of a RecoveryExercise.
         {:ok, activity, state} =
-          if block_type == :cooldown do
-            parse_recovery_exercise(state)
+          if block_type == :cooldown and cooldown_cardio_pattern?(state) do
+            parse_cooldown_inline_cardio(state)
           else
-            parse_exercise_or_simple_activity(state)
+            if block_type == :cooldown do
+              parse_recovery_exercise(state)
+            else
+              parse_exercise_or_simple_activity(state)
+            end
           end
 
         parse_block_body(state, attrs, [activity | activities], block_type)
@@ -2760,6 +2859,54 @@ defmodule WplAi.Parser do
       _ ->
         {nil, state}
     end
+  end
+
+  # Bug 7 helpers: detect and parse `<bare_word> <number> <time_unit> EOL` pattern
+  # in cooldown blocks as an inline CardioActivity (continuous, with total_duration).
+  @time_unit_tokens ~w(s m h sec min seconds minutes hours)
+
+  defp cooldown_cardio_pattern?(state) do
+    # pos 0: bare_word (modality)
+    # pos 1: number
+    # pos 2: bare_word matching a time unit
+    # pos 3: newline/dedent/eof (nothing else on the line)
+    case {peek_token(state, 1), peek_token(state, 2), peek_token(state, 3)} do
+      {{:number, _, _}, {tag2, unit, _}, {sentinel, _, _}}
+      when tag2 in [:bare_word, :keyword] and unit in @time_unit_tokens and
+             sentinel in [:newline, :dedent, :eof] ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp parse_cooldown_inline_cardio(state) do
+    {:ok, modality, state} = expect_bare_word(state)
+    {:ok, value, state} = expect_number(state)
+
+    unit =
+      case current_token(state) do
+        {tag, u, _} when tag in [:bare_word, :keyword] and u in @time_unit_tokens ->
+          state = advance(state)
+          {parse_time_unit(u), state}
+
+        _ ->
+          {:minutes, state}
+      end
+
+    {unit_atom, state} = unit
+
+    cardio = %AST.Cardio{
+      modality: modality,
+      cardio_type: :continuous,
+      total_duration: %AST.Duration{value: value, unit: unit_atom},
+      zone: nil,
+      intensity: nil,
+      intervals: nil
+    }
+
+    {:ok, cardio, state}
   end
 
   defp parse_cardio_activity(state) do
@@ -3731,6 +3878,20 @@ defmodule WplAi.Parser do
 
   defp parse_trigger(state) do
     case current_token(state) do
+      {:keyword, "at", _} ->
+        # "at N weeks" or "at N days"
+        state = advance(state)
+        {:ok, n, state} = expect_number(state)
+
+        case current_token(state) do
+          {:keyword, unit, _} when unit in ["weeks", "days"] ->
+            state = advance(state)
+            {:ok, {:at, trunc(n), String.to_atom(unit)}, state}
+
+          _ ->
+            {:ok, {:at, trunc(n), :weeks}, state}
+        end
+
       {:keyword, "time", _} ->
         state = advance(state)
         state = expect_keyword(state, "week")
@@ -3739,8 +3900,21 @@ defmodule WplAi.Parser do
         {:ok, day, state} = expect_number(state)
         {:ok, {:time, trunc(week), trunc(day)}, state}
 
-      {:keyword, "completion", _} ->
-        {:ok, :completion, advance(state)}
+      # Bug 5 fix: `trigger completion` (no-arg) used to silently return :completion
+      # which swallowed downstream sections. Now emit an explicit parse error.
+      # Note: "completion" is lexed as :bare_word (not in @keywords).
+      {tag, "completion", _} when tag in [:keyword, :bare_word] ->
+        loc = current_location(state)
+        state = advance(state)
+
+        error =
+          ParseError.invalid_structure(
+            "Unsupported checkpoint trigger 'completion' — use 'at N weeks' or 'at N days'.",
+            loc
+          )
+
+        state = %{state | errors: [error | state.errors]}
+        {:ok, :manual, state}
 
       {:keyword, "manual", _} ->
         {:ok, :manual, advance(state)}
@@ -4235,8 +4409,47 @@ defmodule WplAi.Parser do
     end
   end
 
+  # Bug 1 + 2 fix: accept number tokens and glue number+bare_word sequences in
+  # TAGS context. The lexer produces {:number, 531, _} for "531" and a pair of
+  # {:number, 1, _} + {:bare_word, "rm_estimate", _} for "1rm_estimate".
   defp parse_tag_list(state) do
-    parse_enum_list(state)
+    parse_tag_list_items(state, [])
+  end
+
+  defp parse_tag_list_items(state, items) do
+    case current_token(state) do
+      {:bare_word, word, _} ->
+        state = advance(state)
+        state = maybe_skip_comma(state)
+        parse_tag_list_items(state, [word | items])
+
+      {:keyword, word, _} ->
+        state = advance(state)
+        state = maybe_skip_comma(state)
+        parse_tag_list_items(state, [word | items])
+
+      {:number, num, _} ->
+        # Could be a standalone digit-leading tag ("531") or the prefix of a
+        # digit-leading identifier ("1rm_estimate" → number(1) + bare_word("rm_estimate")).
+        state = advance(state)
+        num_str = if is_float(num), do: Float.to_string(num), else: Integer.to_string(trunc(num))
+
+        {tag_str, state} =
+          case current_token(state) do
+            {:bare_word, suffix, _} ->
+              # Glue: "1" + "rm_estimate" → "1rm_estimate"
+              {num_str <> suffix, advance(state)}
+
+            _ ->
+              {num_str, state}
+          end
+
+        state = maybe_skip_comma(state)
+        parse_tag_list_items(state, [tag_str | items])
+
+      _ ->
+        {:ok, Enum.reverse(items), state}
+    end
   end
 
   defp parse_enum_list(state, items \\ []) do
@@ -4470,5 +4683,15 @@ defmodule WplAi.Parser do
 
   defp advance(state) do
     %{state | pos: state.pos + 1}
+  end
+
+  defp peek_token(%{tokens: tokens, pos: pos}, offset) do
+    target = pos + offset
+
+    if target < length(tokens) do
+      Enum.at(tokens, target)
+    else
+      {:eof, nil, Location.new(0, 0)}
+    end
   end
 end

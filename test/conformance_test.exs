@@ -6,6 +6,10 @@ defmodule WplAi.ConformanceTest do
   `source.wpl` against the Elixir compiler, then deep-equals the normalized
   output against `expected.json`.
 
+  Also walks the invalid/parser/ corpus and asserts that WplAi.Parser.parse/1
+  returns {:error, errors} with at least one error whose type matches the
+  expected `type` field and whose message matches the expected `message` field.
+
   Corpus resolution strategy:
     1. If the `WPL_CORPUS_DIR` environment variable is set, use that path.
     2. Otherwise, resolve relative to this file:
@@ -160,6 +164,78 @@ defmodule WplAi.ConformanceTest do
             end)
 
           flunk("[conformance/#{@label}] compiled output failed validation:\n#{formatted}")
+        end
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Invalid-parser conformance: invalid/parser/* fixtures
+  # ---------------------------------------------------------------------------
+
+  invalid_parser_fixtures_dir =
+    Path.expand("../../wpl/conformance/invalid/parser", __DIR__)
+
+  invalid_parser_fixtures =
+    if File.dir?(invalid_parser_fixtures_dir) do
+      invalid_parser_fixtures_dir
+      |> File.ls!()
+      |> Enum.sort()
+      |> Enum.flat_map(fn name ->
+        fixture_dir = Path.join(invalid_parser_fixtures_dir, name)
+        source_file = Path.join(fixture_dir, "source.wpl")
+        expected_file = Path.join(fixture_dir, "expected.json")
+
+        if File.dir?(fixture_dir) and File.exists?(source_file) and File.exists?(expected_file) do
+          [{name, source_file, expected_file}]
+        else
+          []
+        end
+      end)
+    else
+      []
+    end
+
+  for {label, source_file, expected_file} <- invalid_parser_fixtures do
+    @label label
+    @source_file source_file
+    @expected_file expected_file
+
+    test "invalid-parser-conformance: #{@label}" do
+      source = File.read!(@source_file)
+      expected_errors = @expected_file |> File.read!() |> :elixir_json.decode()
+
+      assert {:error, errors} = WplAi.Parser.parse(source),
+             "[conformance/invalid/parser/#{@label}] expected parse to fail but it succeeded"
+
+      for expected <- expected_errors do
+        expected_type = Map.get(expected, "type")
+        expected_message = Map.get(expected, "message")
+        expected_kind = Map.get(expected, "kind", "parse")
+
+        # Verify at least one error matches the expected type and message.
+        match =
+          Enum.any?(errors, fn error ->
+            type_ok =
+              is_nil(expected_type) or to_string(error.type) == expected_type
+
+            message_ok =
+              is_nil(expected_message) or error.message == expected_message
+
+            kind_ok =
+              expected_kind == "parse"
+
+            type_ok and message_ok and kind_ok
+          end)
+
+        unless match do
+          got_messages = Enum.map_join(errors, "\n  ", &"#{&1.type}: #{&1.message}")
+
+          flunk(
+            "[conformance/invalid/parser/#{@label}] no error matched expected:\n" <>
+              "  type: #{expected_type}, message: #{expected_message}\n" <>
+              "Got errors:\n  #{got_messages}"
+          )
         end
       end
     end
