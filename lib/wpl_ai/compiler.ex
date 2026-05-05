@@ -28,7 +28,7 @@ defmodule WplAi.Compiler do
     plan = compile_document(doc)
 
     json = %{
-      "$schema" => "https://gymbile.com/schemas/wpl/v1",
+      "$schema" => "https://wpl.dev/schemas/wpl/v1.schema.json",
       "version" => "1.0.0",
       "plan" => plan
     }

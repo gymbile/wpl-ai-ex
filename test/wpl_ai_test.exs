@@ -598,7 +598,7 @@ defmodule WplAiTest do
       assert {:ok, doc} = WplAi.parse(source)
       assert {:ok, json} = WplAi.compile(doc)
 
-      assert json["$schema"] == "https://gymbile.com/schemas/wpl/v1"
+      assert json["$schema"] == "https://wpl.dev/schemas/wpl/v1.schema.json"
       assert json["version"] == "1.0.0"
       assert json["plan"]["name"] == "Minimal"
       assert json["plan"]["type"] == "workout"
@@ -1109,7 +1109,7 @@ defmodule WplAiTest do
       assert {:ok, json} = WplAi.to_wpl(source)
 
       # Verify top-level structure
-      assert json["$schema"] == "https://gymbile.com/schemas/wpl/v1"
+      assert json["$schema"] == "https://wpl.dev/schemas/wpl/v1.schema.json"
       assert json["version"] == "1.0.0"
 
       plan = json["plan"]
