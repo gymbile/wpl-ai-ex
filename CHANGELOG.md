@@ -7,6 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.5] — 2026-05-05
+
+### Fixed
+
+- **compiler: emit `progress.points_system` instead of `progress.points`** — matches schema field name. Previous `"points"` key produced SCHEMA_VIOLATION when validated.
+- **compiler: day-scoped activity ID counter** — auto-IDs were previously per-block; same activity kind in two blocks of the same day collided (DUPLICATE_ID). Now monotonic across all blocks in a day.
+
 ## [1.6.4] — 2026-05-04
 
 ### Added
