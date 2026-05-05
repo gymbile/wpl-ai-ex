@@ -148,6 +148,19 @@ defmodule WplAi.ConformanceTest do
                "[conformance/#{@label}] output mismatch.\n" <>
                  "Got:  #{inspect(got, pretty: true)}\n\n" <>
                  "Want: #{inspect(want, pretty: true)}"
+
+        # Pass-1 schema + pass-2 semantic validation must produce zero errors.
+        vr = WPL.Validator.validate(compiled)
+        error_findings = Enum.filter(vr.errors, &(&1.severity == :error))
+
+        if error_findings != [] do
+          formatted =
+            Enum.map_join(error_findings, "\n", fn e ->
+              "  #{e.code} #{e.path}: #{e.message}"
+            end)
+
+          flunk("[conformance/#{@label}] compiled output failed validation:\n#{formatted}")
+        end
       end
     end
   end

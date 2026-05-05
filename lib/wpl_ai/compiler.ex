@@ -594,6 +594,10 @@ defmodule WplAi.Compiler do
 
     compiled =
       if day.blocks && day.blocks != [] do
+        # Use a shared day-level activity counter so IDs are unique within the
+        # day scope across all blocks (prevents DUPLICATE_ID when the same
+        # activity kind appears in multiple blocks, e.g. sub_plan in warmup
+        # and cooldown).
         Map.put(compiled, "blocks", compile_blocks(day.blocks))
       else
         compiled
@@ -603,12 +607,20 @@ defmodule WplAi.Compiler do
   end
 
   defp compile_blocks(blocks) when is_list(blocks) do
-    blocks
-    |> Enum.with_index(1)
-    |> Enum.map(fn {block, idx} -> compile_block(block, idx) end)
+    # Assign a monotone counter across all blocks so activity IDs are unique
+    # within the day scope (validator rule: IDs unique per day).
+    {compiled_blocks, _counter} =
+      blocks
+      |> Enum.with_index(1)
+      |> Enum.reduce({[], 0}, fn {block, block_idx}, {acc, counter} ->
+        {compiled_block, new_counter} = compile_block(block, block_idx, counter)
+        {acc ++ [compiled_block], new_counter}
+      end)
+
+    compiled_blocks
   end
 
-  defp compile_block(%AST.Block{} = block, index) do
+  defp compile_block(%AST.Block{} = block, index, activity_counter) do
     compiled = %{
       "id" => "#{block.type}_block",
       "type" => to_string(block.type),
@@ -636,19 +648,20 @@ defmodule WplAi.Compiler do
         compiled
       end
 
-    compiled =
+    {compiled, new_counter} =
       if block.activities && block.activities != [] do
-        activities =
-          block.activities
-          |> Enum.with_index(1)
-          |> Enum.map(fn {act, idx} -> compile_activity(act, idx) end)
+        {activities, final_counter} =
+          Enum.reduce(block.activities, {[], activity_counter}, fn act, {acts, ctr} ->
+            next = ctr + 1
+            {acts ++ [compile_activity(act, next)], next}
+          end)
 
-        Map.put(compiled, "activities", activities)
+        {Map.put(compiled, "activities", activities), final_counter}
       else
-        compiled
+        {compiled, activity_counter}
       end
 
-    compiled
+    {compiled, new_counter}
   end
 
   # =============================================================================
@@ -1129,7 +1142,7 @@ defmodule WplAi.Compiler do
 
     compiled =
       if progress.points do
-        Map.put(compiled, "points", compile_points_config(progress.points))
+        Map.put(compiled, "points_system", compile_points_config(progress.points))
       else
         compiled
       end
