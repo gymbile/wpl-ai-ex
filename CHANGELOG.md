@@ -7,6 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.3] — 2026-05-04
+
+### Changed
+
+- test: per-module unit tests (lexer, parser, vocabularies, exercise_matcher) — 93 new tests.
+
 ## [1.6.2] — 2026-05-05
 
 ### Fixed
