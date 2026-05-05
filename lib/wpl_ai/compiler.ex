@@ -504,6 +504,13 @@ defmodule WplAi.Compiler do
     }
 
     compiled =
+      if phase.type do
+        Map.put(compiled, "type", phase.type)
+      else
+        compiled
+      end
+
+    compiled =
       if phase.description do
         Map.put(compiled, "description", phase.description)
       else
@@ -537,6 +544,13 @@ defmodule WplAi.Compiler do
       "name" => week.name || "Week #{week.number}",
       "order" => week.number
     }
+
+    compiled =
+      if week.is_deload == true do
+        Map.put(compiled, "is_deload", true)
+      else
+        compiled
+      end
 
     if week.days && week.days != [] do
       Map.put(compiled, "days", compile_days(week.days))
@@ -993,6 +1007,20 @@ defmodule WplAi.Compiler do
       end
 
     compiled
+  end
+
+  defp compile_activity(%AST.SubPlan{} = sp, index) do
+    compiled = %{
+      "id" => "sub_plan_#{index}",
+      "type" => "sub_plan",
+      "sub_plan_ref" => sp.sub_plan_ref
+    }
+
+    if sp.name do
+      Map.put(compiled, "name", sp.name)
+    else
+      compiled
+    end
   end
 
   defp compile_recovery_exercise(%AST.RecoveryExercise{} = ex, index) do

@@ -1513,9 +1513,22 @@ defmodule WplAi.Parser do
     end
   end
 
+  @phase_types ~w(accumulation intensification realization deload base build peak recovery transition)
+
   defp parse_phase(state) do
     state = advance(state)
     {:ok, name, state} = expect_string(state)
+
+    # Optional periodization role (schema v1.5.0+): PHASE "Name" accumulation (4 weeks):
+    {phase_type, state} =
+      case current_token(state) do
+        {:keyword, word, _} when word in @phase_types ->
+          {word, advance(state)}
+
+        _ ->
+          {nil, state}
+      end
+
     state = expect_lparen(state)
     {:ok, duration, state} = parse_duration(state)
     state = expect_rparen(state)
@@ -1532,6 +1545,7 @@ defmodule WplAi.Parser do
 
     phase = %AST.Phase{
       name: name,
+      type: phase_type,
       duration: duration,
       goals: attrs[:goals],
       description: attrs[:description],
@@ -1583,6 +1597,13 @@ defmodule WplAi.Parser do
     state = advance(state)
     {:ok, number, state} = expect_number(state)
 
+    # Optional deload flag (schema v1.5.0+): WEEK 4 deload "Name":
+    {is_deload, state} =
+      case current_token(state) do
+        {:keyword, "deload", _} -> {true, advance(state)}
+        _ -> {nil, state}
+      end
+
     name =
       case current_token(state) do
         {:string, n, _} ->
@@ -1608,6 +1629,7 @@ defmodule WplAi.Parser do
     week = %AST.Week{
       number: trunc(number),
       name: name_val,
+      is_deload: is_deload,
       days: days
     }
 
@@ -2086,6 +2108,10 @@ defmodule WplAi.Parser do
         {:ok, activity, state} = parse_habit_activity(state)
         parse_block_body(state, attrs, [activity | activities], block_type)
 
+      {:keyword, "subplan", _} ->
+        {:ok, activity, state} = parse_sub_plan_activity(state)
+        parse_block_body(state, attrs, [activity | activities], block_type)
+
       {:bare_word, _, _} ->
         # In cooldown blocks, bare words are recovery exercises
         {:ok, activity, state} =
@@ -2141,6 +2167,7 @@ defmodule WplAi.Parser do
              "cardio",
              "habit",
              "recovery",
+             "subplan",
              "rounds",
              "rest_between_rounds",
              "PHASES",
@@ -3093,6 +3120,27 @@ defmodule WplAi.Parser do
     }
 
     {:ok, exercise, state}
+  end
+
+  # Sub-plan inclusion activity (schema v1.5.0+):
+  #   subplan plan_warmup_full_body
+  #   subplan plan_warmup_full_body "Standard warmup"
+  defp parse_sub_plan_activity(state) do
+    state = advance(state)
+    {:ok, ref, state} = expect_bare_word(state)
+
+    {name, state} =
+      case current_token(state) do
+        {:string, s, _} -> {s, advance(state)}
+        _ -> {nil, state}
+      end
+
+    sub_plan = %AST.SubPlan{
+      sub_plan_ref: ref,
+      name: name
+    }
+
+    {:ok, sub_plan, state}
   end
 
   defp parse_habit_activity(state) do

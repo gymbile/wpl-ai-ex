@@ -337,10 +337,22 @@ defmodule WplAi.AST do
 
   defmodule Phase do
     @moduledoc "Training phase"
-    defstruct [:name, :duration, :goals, :description, :weeks, meta: %{}]
+    defstruct [:name, :type, :duration, :goals, :description, :weeks, meta: %{}]
+
+    @type phase_type ::
+            :accumulation
+            | :intensification
+            | :realization
+            | :deload
+            | :base
+            | :build
+            | :peak
+            | :recovery
+            | :transition
 
     @type t :: %__MODULE__{
             name: String.t(),
+            type: phase_type() | nil,
             duration: Duration.t(),
             goals: [String.t()] | nil,
             description: String.t() | nil,
@@ -351,11 +363,12 @@ defmodule WplAi.AST do
 
   defmodule Week do
     @moduledoc "Training week"
-    defstruct [:number, :name, :days, meta: %{}]
+    defstruct [:number, :name, :is_deload, :days, meta: %{}]
 
     @type t :: %__MODULE__{
             number: integer(),
             name: String.t() | nil,
+            is_deload: true | nil,
             days: [Day.t()],
             meta: map()
           }
@@ -417,6 +430,7 @@ defmodule WplAi.AST do
             | Recovery.t()
             | Habit.t()
             | SimpleActivity.t()
+            | SubPlan.t()
   end
 
   # =============================================================================
@@ -641,6 +655,17 @@ defmodule WplAi.AST do
             name: String.t(),
             duration: Duration.t() | nil,
             params: [String.t()] | nil,
+            meta: map()
+          }
+  end
+
+  defmodule SubPlan do
+    @moduledoc "Sub-plan inclusion activity (schema v1.5.0+)"
+    defstruct [:sub_plan_ref, :name, meta: %{}]
+
+    @type t :: %__MODULE__{
+            sub_plan_ref: String.t(),
+            name: String.t() | nil,
             meta: map()
           }
   end

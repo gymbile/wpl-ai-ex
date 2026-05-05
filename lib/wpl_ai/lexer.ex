@@ -112,6 +112,8 @@ defmodule WplAi.Lexer do
     hr_max lthr resting_hr ftp vo2max critical_pace body_weight one_rm
     watts
     pattern
+    accumulation intensification realization deload base build peak transition
+    subplan
   )a
 
   @doc """
