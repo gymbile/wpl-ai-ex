@@ -7,6 +7,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.6.7] — 2026-05-04
+
+### Fixed — parser bug: dash-prefixed typed MeasurementSpec (TS parity with @gymbile/wpl-ai@1.10.5)
+
+- **#G — dash-prefixed typed `MeasurementSpec` parsing**: `parse_typed_measurement_list/2` now correctly handles `- questionnaire_score questionnaire psqi note "text"` as a single `%AST.MeasurementSpec{}` node (with `metric`, `questionnaire`, and `note` fields) rather than emitting a bare spec with only `metric` set and discarding the remaining qualifiers.
+
 ## [1.6.6] — 2026-05-05
 
 ### Fixed — 7 silent-failure parser/lexer bugs (TS parity with @gymbile/wpl-ai@1.10.4)

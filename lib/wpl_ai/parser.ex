@@ -3937,7 +3937,7 @@ defmodule WplAi.Parser do
         parse_typed_measurement_list(state, [str | items])
 
       {:minus, _, _} ->
-        # Dash-prefixed items: "-  body_weight_kg"
+        # Dash-prefixed items: "- body_weight_kg" or "- questionnaire_score questionnaire psqi note '...'"
         state = advance(state)
 
         case current_token(state) do
@@ -3947,8 +3947,46 @@ defmodule WplAi.Parser do
 
           {tag, metric, _} when tag in [:keyword, :bare_word] ->
             state = advance(state)
-            spec = %AST.MeasurementSpec{metric: metric}
-            parse_typed_measurement_list(state, [spec | items])
+
+            # Check for optional `questionnaire <enum> [note "text"]` qualifiers
+            {item, state} =
+              case current_token(state) do
+                {:keyword, "questionnaire", _} ->
+                  state = advance(state)
+
+                  {questionnaire, state} =
+                    case current_token(state) do
+                      {qtag, qval, _} when qtag in [:keyword, :bare_word] ->
+                        {qval, advance(state)}
+
+                      _ ->
+                        {nil, state}
+                    end
+
+                  {note, state} =
+                    case current_token(state) do
+                      {:keyword, "note", _} ->
+                        state = advance(state)
+                        {:ok, n, state} = expect_string(state)
+                        {n, state}
+
+                      {:bare_word, "note", _} ->
+                        state = advance(state)
+                        {:ok, n, state} = expect_string(state)
+                        {n, state}
+
+                      _ ->
+                        {nil, state}
+                    end
+
+                  {%AST.MeasurementSpec{metric: metric, questionnaire: questionnaire, note: note},
+                   state}
+
+                _ ->
+                  {%AST.MeasurementSpec{metric: metric}, state}
+              end
+
+            parse_typed_measurement_list(state, [item | items])
 
           _ ->
             parse_typed_measurement_list(state, items)
