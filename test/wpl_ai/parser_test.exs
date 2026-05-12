@@ -378,5 +378,67 @@ defmodule WplAi.ParserTest do
                TYPE workout
                """)
     end
+
+    # Common LLM mistake (surfaced by wpl-eval's truncation analysis): the
+    # model writes a "summary" version of a plan where each WEEK has
+    # one-line entries like `Monday: ...` instead of full DAY blocks.
+    # Pre-parity with TS 1.11.0 this was silently discarded; we now flag
+    # it with a repair_hint so an agentic loop can regenerate the
+    # offending week.
+    test "WEEK with inline-summary content emits :week_has_no_valid_days with repair_hint" do
+      source = ~S"""
+      PLAN "Trunc"
+      TYPE workout
+
+      PHASES
+        PHASE "Foundation" (4 weeks):
+          WEEK 1:
+            DAY Monday training 45m "Real day":
+              main:
+                push_up 3x10
+          WEEK 2:
+            Monday: walk/run intervals (slightly longer)
+            Wednesday: walk/run intervals (slightly longer)
+          WEEK 3:
+            DAY Tuesday training 45m "Recovers":
+              main:
+                push_up 3x10
+      """
+
+      assert {:error, errors} = Parser.parse(source)
+      day_err = Enum.find(errors, &(&1.type == :week_has_no_valid_days))
+      assert day_err != nil
+      assert day_err.message =~ "WEEK 2"
+      assert day_err.message =~ "DAY"
+      assert day_err.repair_hint != nil
+      assert day_err.repair_hint.action == :add_days
+      assert day_err.repair_hint.parent_name == "Week 2"
+      assert day_err.repair_hint.context_dsl_example =~ "DAY Monday"
+    end
+
+    test "legitimately empty WEEK (placeholder week) parses without error" do
+      # Periodisation scaffolds commonly declare empty weeks. The next
+      # top-level keyword (WEEK / PHASE) signals end-of-body without any
+      # erroneous inline content; the parser must accept this.
+      source = ~S"""
+      PLAN "Empty weeks"
+      TYPE workout
+
+      PHASES
+        PHASE "Foundation" (3 weeks):
+          WEEK 1:
+            DAY Monday training 45m "Real":
+              main:
+                push_up 3x10
+          WEEK 2:
+          WEEK 3:
+      """
+
+      doc = parse!(source)
+      [phase] = doc.phases
+      assert length(phase.weeks) == 3
+      assert Enum.at(phase.weeks, 1).days == []
+      assert Enum.at(phase.weeks, 2).days == []
+    end
   end
 end

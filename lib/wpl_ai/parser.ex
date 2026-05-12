@@ -1787,16 +1787,22 @@ defmodule WplAi.Parser do
     state = expect_colon(state)
     state = skip_newlines(state)
 
-    state =
+    # Track whether we entered an indented body. Used to distinguish
+    # legitimate empty weeks (placeholder week with no indented content,
+    # e.g. periodisation scaffold) from the silent-drop case where the
+    # body contains non-DAY content like inline `Monday: ...` summaries.
+    {entered_indent?, state} =
       case current_token(state) do
-        {:indent, _, _} -> advance(state)
-        _ -> state
+        {:indent, _, _} -> {true, advance(state)}
+        _ -> {false, state}
       end
 
-    {:ok, days, state} = parse_days(state, [])
+    week_number = trunc(number)
+    week_for_error = if entered_indent?, do: week_number, else: nil
+    {:ok, days, state} = parse_days(state, [], week_for_error)
 
     week = %AST.Week{
-      number: trunc(number),
+      number: week_number,
       name: name_val,
       is_deload: is_deload,
       days: days
@@ -1805,13 +1811,13 @@ defmodule WplAi.Parser do
     {:ok, week, state}
   end
 
-  defp parse_days(state, days) do
+  defp parse_days(state, days, week_for_error) do
     state = skip_newlines(state)
 
     case current_token(state) do
       {:keyword, "DAY", _} ->
         {:ok, day, state} = parse_day(state)
-        parse_days(state, [day | days])
+        parse_days(state, [day | days], week_for_error)
 
       {:dedent, _, _} ->
         state = advance(state)
@@ -1825,12 +1831,31 @@ defmodule WplAi.Parser do
       {:keyword, outer, _} when outer in ["WEEK", "PHASE"] ->
         {:ok, Enum.reverse(days), state}
 
-      # Stray token between DAY blocks (e.g. a dangling `rpe 7` that leaked
-      # from an exercise line with unrecognised qualifiers). Skip one token
-      # and keep scanning for the next DAY or dedent instead of cascading
-      # the failure out to parse_week.
+      # Silent-drop guard (parity with wpl-ai 1.11.0). When parse_week
+      # entered an indented body but the content here isn't a DAY block,
+      # emit a precise parse error with a repair_hint so agentic loops
+      # can regenerate this specific week. Only fires once per week (when
+      # we have zero DAYs accumulated AND week_for_error is set).
+      {_tok_type, tok_value, location} when days == [] and not is_nil(week_for_error) ->
+        got_token = "#{tok_value}"
+        error = ParseError.week_has_no_valid_days(week_for_error, got_token, location)
+        state = %{state | errors: [error | state.errors]}
+        # Recover: skip tokens until we hit dedent / eof / peer-keyword
+        # so subsequent weeks parse cleanly. Pass nil for week_for_error
+        # so we don't double-emit on recovery.
+        {:ok, Enum.reverse(days), recover_to_peer(state)}
+
       _ ->
-        parse_days(advance(state), days)
+        parse_days(advance(state), days, week_for_error)
+    end
+  end
+
+  defp recover_to_peer(state) do
+    case current_token(state) do
+      {:dedent, _, _} -> advance(state)
+      {:eof, _, _} -> state
+      {:keyword, outer, _} when outer in ["WEEK", "PHASE"] -> state
+      _ -> recover_to_peer(advance(state))
     end
   end
 

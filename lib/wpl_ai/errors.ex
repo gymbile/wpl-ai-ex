@@ -121,7 +121,7 @@ defmodule WplAi.Errors do
 
   defmodule ParseError do
     @moduledoc "Error during parsing"
-    defstruct [:type, :message, :location, :expected, :got, :suggestions]
+    defstruct [:type, :message, :location, :expected, :got, :suggestions, :repair_hint]
 
     @type error_type ::
             :unexpected_token
@@ -132,6 +132,19 @@ defmodule WplAi.Errors do
             | :duplicate_section
             | :invalid_structure
             | :unknown_exercise_ref
+            | :week_has_no_valid_days
+
+    @type repair_hint :: %{
+            optional(:action) => atom(),
+            optional(:target_path) => String.t(),
+            optional(:parent_name) => String.t() | nil,
+            optional(:missing) => [String.t() | non_neg_integer()] | nil,
+            optional(:expected_count) => non_neg_integer() | nil,
+            optional(:actual_count) => non_neg_integer() | nil,
+            optional(:allowed_values) => [String.t()] | nil,
+            optional(:expected_shape) => String.t() | nil,
+            optional(:context_dsl_example) => String.t() | nil
+          }
 
     @type t :: %__MODULE__{
             type: error_type(),
@@ -139,7 +152,8 @@ defmodule WplAi.Errors do
             location: Location.t() | nil,
             expected: [String.t()] | nil,
             got: String.t() | nil,
-            suggestions: [String.t()] | nil
+            suggestions: [String.t()] | nil,
+            repair_hint: repair_hint() | nil
           }
 
     def new(type, message, opts \\ []) do
@@ -149,7 +163,8 @@ defmodule WplAi.Errors do
         location: Keyword.get(opts, :location),
         expected: Keyword.get(opts, :expected),
         got: Keyword.get(opts, :got),
-        suggestions: Keyword.get(opts, :suggestions)
+        suggestions: Keyword.get(opts, :suggestions),
+        repair_hint: Keyword.get(opts, :repair_hint)
       }
     end
 
@@ -233,6 +248,52 @@ defmodule WplAi.Errors do
         :invalid_structure,
         message,
         location: location
+      )
+    end
+
+    @day_block_dsl_example """
+          DAY Monday training 45m "Session name":
+            warmup:
+              cycling 5m zone2
+            main straight_sets:
+              <exercise_name> 3x8..12 rpe 7 rest 90 seconds
+            cooldown:
+              <stretch_name> 30s\
+    """
+
+    @doc """
+    Emitted when a `WEEK N:` block contains content that is not a valid
+    `DAY` block (e.g. the LLM wrote `Monday: walk/run` as an inline summary
+    instead of `DAY Monday training 45m "..."`). Without this error the
+    parser silently discarded the malformed week body, the compiler
+    produced a week with empty days, and only the downstream
+    `:phase_duration_mismatch` validator caught the gap.
+
+    Mirrors the TypeScript factory `weekHasNoValidDays` in
+    `@gymbile/wpl-ai` 1.11.0.
+    """
+    def week_has_no_valid_days(week_number, got_token, location)
+        when is_integer(week_number) do
+      week_label = "WEEK #{week_number}"
+
+      repair_hint = %{
+        action: :add_days,
+        target_path: "/plan/weeks/#{week_number}/days",
+        parent_name: "Week #{week_number}",
+        expected_shape:
+          "DAY <name> training <duration> \"<label>\": (with warmup/main/cooldown body)",
+        context_dsl_example: @day_block_dsl_example
+      }
+
+      new(
+        :week_has_no_valid_days,
+        "#{week_label} block has no valid DAY children (found '#{got_token}'). " <>
+          "Use 'DAY <name> training Nm \"...\":' syntax — inline 'Monday: ...' " <>
+          "summaries are not valid WPL-AI.",
+        location: location,
+        expected: ["DAY"],
+        got: got_token,
+        repair_hint: repair_hint
       )
     end
 
