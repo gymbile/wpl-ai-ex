@@ -7,6 +7,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-05-13
+
+### Version jump 1.8.0 → 1.12.0 to restore TS/Elixir parity
+
+The Elixir port's version number has been brought into alignment with
+the TypeScript reference `@gymbile/wpl-ai`. Versions 1.9.0, 1.10.0,
+and 1.11.0 are deliberately skipped — there is no Elixir release at
+those tags. Going forward both implementations will release under
+matching version numbers so a `wpl_ai 1.x.y` Hex package and a
+`@gymbile/wpl-ai@1.x.y` npm package always implement the same
+behavioural surface.
+
+1.12.0 is identical in content to 1.8.0 (released 30 minutes earlier).
+No functional changes; this release exists solely to realign the
+version stream.
+
 ## [1.8.0] — 2026-05-13
 
 ### Fixed — 8 silent-truncation / tolerance bugs (TS parity with @gymbile/wpl-ai@1.12.0)
