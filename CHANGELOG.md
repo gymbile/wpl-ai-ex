@@ -7,6 +7,78 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-05-13
+
+### Fixed — 8 silent-truncation / tolerance bugs (TS parity with @gymbile/wpl-ai@1.12.0)
+
+Compound effect: Lane B served rate moved from 37/80 to 77/80 in the wpl-eval
+v0.2.0 corpus with no LLM re-calls. The 0/80 safety claim is unchanged.
+
+- **#1 — rpe/rir range modifiers (`rpe 7..8`, `rir 1..2`)**: `parse_exercise_modifiers`
+  and `parse_intensity` now accept range syntax in addition to scalar values.
+  Produces `rpe_min`/`rpe_max` (resp. `rir_min`/`rir_max`) on `%AST.Exercise{}`;
+  compiler emits `target_rpe_min`/`target_rpe_max` accordingly. Previously the
+  range token leaked into downstream parsing and silently truncated subsequent
+  WEEK blocks.
+
+- **#2 — reps time-unit suffix before modifier keyword (`3x30s rpe 6`)**: 
+  `parse_reps_spec` now consumes a trailing `s`/`m`/`seconds`/`minutes`/`hours`
+  suffix when the next token is a modifier keyword (`rpe`, `rir`, `rest`, `tempo`,
+  `weight`, `name`, `to_failure`, `bodyweight`). Applied to both single-number and
+  range (`3x20..30s`) reps branches via shared `@reps_modifier_follow` constant
+  and `maybe_consume_reps_unit_suffix/1` helper.
+
+- **#3 — long-form duration units in simple activity (`cycling 10 minutes`)**: 
+  `parse_exercise_or_simple_activity` accepts keyword units (`seconds`, `minutes`,
+  `hours`, `days`) in the simple-activity branch in addition to short bare-word
+  forms (`s`, `m`, `h`).
+
+- **#4 — simple activity trailing modifiers leak (`cycling 20m rpe 6 rest 30s`)**:
+  New `consume_simple_activity_modifiers/1` helper walks and discards any trailing
+  `rpe`/`rir`/`rest`/`tempo`/`weight`/`name`/`to_failure`/`bodyweight`/`heart_rate_zone`/
+  `bpm`/`pace` tokens after a simple activity. Values are intentionally dropped
+  (SimpleActivity has no carrier fields); the goal is to prevent leakage.
+
+- **#5 — lexer: en/em-dash normalised, typographic punctuation silently skipped, N-M as range**:
+  - En-dash (U+2013) and em-dash (U+2014) → ASCII hyphen via pre-scan normalisation.
+  - `;`, `&`, `~`, `@`, ASCII apostrophe (`'`), smart quotes (' ' " "), ellipsis (…),
+    ≤, ≥, middle-dot, bullet → dropped silently.
+  - `N-M` between two numbers emits a `:range` token (equivalent to `..`) when the
+    prior emitted token was a `:number`. `parse_tempo` updated to accept `:range` as
+    a separator alongside `:minus` between tempo segments.
+  - Elixir structural note: implemented as a `normalize_typographic_chars/1` pre-scan
+    pass (source string normalisation) rather than the TS in-place byte mutation
+    approach — idiomatic for Elixir's immutable binary model.
+
+- **#6 — trailing-dot number typos (`12.`, `7.`)**:
+  `consume_number_like` stops before consuming a `.` that has no digit after it;
+  the clean integer is emitted and `tokenize_dots` skips the dangling dot silently.
+
+- **#7 — stray top-level ALL-CAPS sections (`NUTRITION:`, `SUMMARY:`, `NOTES:`)**:
+  `parse_sections` detects an ALL-CAPS keyword followed by `:` and skips the entire
+  indented body using `skip_until_matching_dedent/2`. No error is emitted; compile
+  reports `ok: true` and the PHASES section parses normally.
+
+- **#8 — two-tier exercise-ref resolution**:
+  - Unknown TYPE values (e.g. `TYPE summary`) silently fall back to `:workout` instead
+    of `String.to_atom`-ing arbitrary values.
+  - Cardio modalities (`running`, `walking`, `cycling`, `rowing`, `elliptical`,
+    `swimming`, `jump_rope`, `hiking`) accepted as exercise refs in sets×reps form.
+  - `resolve_exercise_ref/1` replaces ad-hoc validation: tier 1 auto-corrects
+    high-confidence typos (Jaro-Winkler ≥ 0.85, e.g. `pushup` → `push_up`); tier 2
+    accepts unknown refs as-is so compile succeeds with the model's literal name
+    preserved in `exercise_ref`.
+
+### Added
+
+- `%AST.Exercise{}` gains fields: `rpe_min`, `rpe_max`, `rir_min`, `rir_max`.
+- `WplAi.Parser` (private): `resolve_exercise_ref/1`, `maybe_consume_reps_unit_suffix/1`,
+  `consume_simple_activity_modifiers/1`, `expect_minus_or_range/1`, `@reps_modifier_follow`,
+  `@simple_activity_modifier_keywords`, `@cardio_modality_set`.
+- `WplAi.Lexer` (private): `normalize_typographic_chars/1`, `@dash_replacements`,
+  `@silent_skip_replacements`, `last_emitted_token_is_number?/1`.
+- 49 new regression tests in `test/wpl_ai/v1_12_fixes_test.exs`.
+
 ## [1.6.7] — 2026-05-04
 
 ### Fixed — parser bug: dash-prefixed typed MeasurementSpec (TS parity with @gymbile/wpl-ai@1.10.5)
