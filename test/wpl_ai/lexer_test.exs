@@ -171,15 +171,18 @@ defmodule WplAi.LexerTest do
       refute Enum.any?(pairs, fn {t, _} -> t in [:ident, :bare_word, :keyword, :number] end)
     end
 
-    test "tempo pattern 3-1-1-0 tokenizes as four numbers (minus is consumed as leading sign)" do
-      # The lexer consumes leading '-' as a sign on the next number token;
-      # so "3-1-1-0" produces numbers 3, -1, -1, 0 — no :minus tokens.
+    test "tempo pattern 3-1-1-0 tokenizes as four positive numbers separated by range tokens" do
+      # After the N-M range fix (commit 327e456), when a `-` sits between two
+      # numbers the lexer emits a :range token rather than treating the minus as
+      # a leading sign. So "3-1-1-0" produces numbers [3, 1, 1, 0] with :range
+      # tokens between them — no negative numbers, no :minus tokens.
+      # parse_tempo accepts both :minus and :range as separators.
       pairs = token_pairs("3-1-1-0\n")
 
       number_values =
         pairs |> Enum.filter(fn {t, _} -> t == :number end) |> Enum.map(&elem(&1, 1))
 
-      assert number_values == [3, -1, -1, 0]
+      assert number_values == [3, 1, 1, 0]
     end
 
     test "WEEK 1: does not swallow the colon into the number" do

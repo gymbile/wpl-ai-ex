@@ -7,6 +7,7 @@ defmodule WplAi.Parser do
   """
 
   alias WplAi.AST
+  alias WplAi.ExerciseMatcher
   alias WplAi.Lexer
   alias WplAi.Errors.{ParseError, Location}
 
@@ -187,7 +188,12 @@ defmodule WplAi.Parser do
       "meditation" -> :meditation
       "recovery" -> :recovery
       "hybrid" -> :hybrid
-      _ -> String.to_atom(value)
+      # Models occasionally emit non-canonical TYPE values (e.g. `summary`,
+      # `program`) for prose-y plan headers. The downstream safety contract
+      # doesn't depend on plan_type — it gates exercise validity inside the
+      # plan, not the plan-type label. Silently fall back to the canonical
+      # default rather than blocking the entire compile.
+      _ -> :workout
     end
   end
 
@@ -257,6 +263,36 @@ defmodule WplAi.Parser do
 
       {:eof, _, _} ->
         {:ok, sections, state}
+
+      # Models commonly emit free-form ALL-CAPS top-level blocks like
+      # `NUTRITION:`, `SUMMARY:`, `NOTES:` after the canonical PHASES section.
+      # These aren't part of the grammar, but they don't change the safety
+      # contract — they're prose annotations. Skip the whole sub-block
+      # (keyword + colon + indented body) silently so the compile succeeds.
+      {:keyword, caps_kw, _} ->
+        if Regex.match?(~r/^[A-Z_]+$/, caps_kw) and
+             match?({:colon, _, _}, current_token(advance(state))) do
+          state = advance(state)
+          # skip keyword
+          state = advance(state)
+          # skip ":"
+          state = skip_newlines(state)
+
+          state =
+            case current_token(state) do
+              {:indent, _, _} ->
+                state = advance(state)
+                skip_until_matching_dedent(state, 1)
+
+              _ ->
+                state
+            end
+
+          parse_sections(state, sections)
+        else
+          # Not an ALL-CAPS block header — skip one token and keep looking.
+          parse_sections(advance(state), sections)
+        end
 
       # Tolerant fallback: subagent-generated sections sometimes leave an
       # unexpected token in the stream when their body grammar drifts from
@@ -2401,6 +2437,39 @@ defmodule WplAi.Parser do
     end
   end
 
+  # Cardio modalities commonly appear as the "exercise ref" in sets×reps
+  # prescriptions emitted by LLMs ("running 1x60 rpe 5 rest 90 seconds").
+  # Accept them silently — the WPL JSON schema permits exercise_ref as a
+  # free string, and the semantic validator can flag unsupported usage.
+  @cardio_modality_set ~w(running walking cycling rowing elliptical swimming
+    jump_rope hiking)
+
+  # Two-tier exercise-ref resolution (commit 2137782).
+  #
+  # Tier 1 — high-confidence (Jaro-Winkler >= 0.85): auto-correct typos.
+  #   `pushup` → `push_up`, `bnech_press` → `bench_press`.
+  # Tier 2 — no high-confidence match: accept ref as-is. The WPL JSON
+  #   schema permits exercise_ref as a free string; the semantic validator
+  #   can emit a warning later if needed.
+  #
+  # Returns the (possibly substituted) exercise ref string.
+  defp resolve_exercise_ref(name) do
+    if name in @cardio_modality_set do
+      name
+    else
+      case ExerciseMatcher.validate(name) do
+        :ok ->
+          name
+
+        {:unknown, _suggestions} ->
+          case ExerciseMatcher.best_match(name) do
+            {:ok, best} -> best
+            :no_match -> name
+          end
+      end
+    end
+  end
+
   defp parse_exercise_or_simple_activity(state) do
     {:ok, name, state} = expect_bare_word(state)
 
@@ -2415,9 +2484,10 @@ defmodule WplAi.Parser do
             state = advance(state)
             {:ok, reps, state} = parse_reps_spec(state)
             {modifiers, state} = parse_exercise_modifiers(state, %{})
+            resolved_name = resolve_exercise_ref(name)
 
             exercise = %AST.Exercise{
-              exercise_ref: name,
+              exercise_ref: resolved_name,
               name: modifiers[:name],
               sets: trunc(sets),
               reps: reps,
@@ -2443,9 +2513,10 @@ defmodule WplAi.Parser do
             state = advance(state)
             {:ok, reps, state} = parse_reps_spec(state)
             {modifiers, state} = parse_exercise_modifiers(state, %{})
+            resolved_name = resolve_exercise_ref(name)
 
             exercise = %AST.Exercise{
-              exercise_ref: name,
+              exercise_ref: resolved_name,
               name: modifiers[:name],
               sets: trunc(sets),
               reps: reps,
@@ -2472,9 +2543,10 @@ defmodule WplAi.Parser do
             # because "x" is not stopped before uppercase letters.
             state = advance(state)
             {modifiers, state} = parse_exercise_modifiers(state, %{})
+            resolved_name = resolve_exercise_ref(name)
 
             exercise = %AST.Exercise{
-              exercise_ref: name,
+              exercise_ref: resolved_name,
               name: modifiers[:name],
               sets: trunc(sets),
               reps: :amrap,
@@ -2905,18 +2977,22 @@ defmodule WplAi.Parser do
 
   defp parse_tempo(state) do
     # Tempo can be like "3-1-2-0", "3-0-X-1", or as separate tokens.
+    # The lexer emits either :minus or :range tokens between numbers depending
+    # on context — after the N-M range fix (commit 327e456), `3-1` between two
+    # numbers produces [:number, :range, :number]. parse_tempo must accept both
+    # :minus and :range as separators so tempo strings survive unchanged.
     case current_token(state) do
       {:number, first, _} ->
         state = advance(state)
 
         case current_token(state) do
-          {:minus, _, _} ->
+          {sep, _, _} when sep in [:minus, :range] ->
             # Parse tempo pattern (supports X for explosive concentric).
             state = advance(state)
             {second, state} = read_tempo_segment(state)
-            state = expect_minus(state)
+            state = expect_minus_or_range(state)
             {third, state} = read_tempo_segment(state)
-            state = expect_minus(state)
+            state = expect_minus_or_range(state)
             {fourth, state} = read_tempo_segment(state)
             {:ok, "#{trunc(first)}-#{second}-#{third}-#{fourth}", state}
 
@@ -4826,6 +4902,17 @@ defmodule WplAi.Parser do
   defp expect_minus(state) do
     case current_token(state) do
       {:minus, _, _} -> advance(state)
+      _ -> state
+    end
+  end
+
+  # Accept either :minus or :range as a separator — after the N-M range fix,
+  # `3-1` in tempo context produces [:number, :range, :number] rather than
+  # [:number :minus :number]. Both forms must advance past the separator.
+  defp expect_minus_or_range(state) do
+    case current_token(state) do
+      {:minus, _, _} -> advance(state)
+      {:range, _, _} -> advance(state)
       _ -> state
     end
   end

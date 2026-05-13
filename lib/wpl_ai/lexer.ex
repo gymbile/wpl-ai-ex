@@ -134,6 +134,10 @@ defmodule WplAi.Lexer do
   def tokenize(source) do
     # Normalize line endings
     source = String.replace(source, "\r\n", "\n")
+    # Normalise LLM-emitted typographic characters that have no WPL semantic
+    # value. Do this before byte-level scanning so the main tokenizer loop
+    # never sees multi-byte sequences for these characters.
+    source = normalize_typographic_chars(source)
 
     state = %{
       source: source,
@@ -154,6 +158,73 @@ defmodule WplAi.Lexer do
       %{errors: errors} ->
         {:error, Enum.reverse(errors)}
     end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Typographic normalisation (commit 327e456 + 73ca0f7)
+  # ---------------------------------------------------------------------------
+  #
+  # LLMs routinely emit Unicode punctuation that has no semantic meaning in WPL
+  # but previously triggered `invalid_character` errors and cascaded into silent
+  # week-truncation. We normalise the source string once before byte-level
+  # scanning so the main tokeniser loop never sees multi-byte codepoints.
+  #
+  # Two categories:
+  #   1. En-dash (U+2013) and em-dash (U+2014) → ASCII hyphen "-".
+  #      The surrounding tokenise_minus_or_arrow logic then handles them
+  #      correctly (including the N-M-as-range rule).
+  #   2. Other typographic punctuation that carries no WPL grammar meaning
+  #      (`;`, `&`, `~`, `@`, ASCII apostrophe `'`, smart quotes, ellipsis,
+  #      ≤, ≥, middle-dot, bullet) → empty string (silently dropped).
+
+  @dash_replacements [
+    # En-dash U+2013 → hyphen
+    {<<0xE2, 0x80, 0x93>>, "-"},
+    # Em-dash U+2014 → hyphen
+    {<<0xE2, 0x80, 0x94>>, "-"}
+  ]
+
+  @silent_skip_replacements [
+    # Semicolon
+    {";", ""},
+    # Ampersand
+    {"&", ""},
+    # Tilde
+    {"~", ""},
+    # At-sign
+    {"@", ""},
+    # ASCII apostrophe U+0027
+    {"'", ""},
+    # Left single quotation mark U+2018
+    {<<0xE2, 0x80, 0x98>>, ""},
+    # Right single quotation mark / typographic apostrophe U+2019
+    {<<0xE2, 0x80, 0x99>>, ""},
+    # Left double quotation mark U+201C
+    {<<0xE2, 0x80, 0x9C>>, ""},
+    # Right double quotation mark U+201D
+    {<<0xE2, 0x80, 0x9D>>, ""},
+    # Horizontal ellipsis U+2026
+    {<<0xE2, 0x80, 0xA6>>, ""},
+    # Less-than or equal to U+2264
+    {<<0xE2, 0x89, 0xA4>>, ""},
+    # Greater-than or equal to U+2265
+    {<<0xE2, 0x89, 0xA5>>, ""},
+    # Middle dot U+00B7
+    {<<0xC2, 0xB7>>, ""},
+    # Bullet U+2022
+    {<<0xE2, 0x80, 0xA2>>, ""}
+  ]
+
+  defp normalize_typographic_chars(source) do
+    source
+    |> apply_replacements(@dash_replacements)
+    |> apply_replacements(@silent_skip_replacements)
+  end
+
+  defp apply_replacements(source, replacements) do
+    Enum.reduce(replacements, source, fn {from, to}, acc ->
+      String.replace(acc, from, to)
+    end)
   end
 
   # Main tokenization loop
@@ -476,13 +547,34 @@ defmodule WplAi.Lexer do
         |> tokenize_line_content()
 
       c when c in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] ->
-        tokenize_number(state)
+        # Range-as-hyphen: when a `-` sits between two numbers (`6-7`, `9-12`)
+        # and the previous emitted token was a number, treat it as a range
+        # operator (equivalent to `..`). Models routinely write ranges in
+        # natural English form without this they produce `number minus number`
+        # which the parser doesn't expect and which cascades into silent
+        # week-truncation.
+        if last_emitted_token_is_number?(state) do
+          state
+          |> emit_token(:range, "..")
+          |> advance()
+          |> tokenize_line_content()
+        else
+          # Leading sign on a negative number literal — existing behaviour.
+          tokenize_number(state)
+        end
 
       _ ->
         state
         |> emit_token(:minus, "-")
         |> advance()
         |> tokenize_line_content()
+    end
+  end
+
+  defp last_emitted_token_is_number?(state) do
+    case state.tokens do
+      [{:number, _, _} | _] -> true
+      _ -> false
     end
   end
 
@@ -495,9 +587,21 @@ defmodule WplAi.Lexer do
         |> advance_by(2)
         |> tokenize_line_content()
 
-      _ ->
-        # Single dot - part of identifier or slug
-        tokenize_identifier(state)
+      next ->
+        # A bare `.` only makes semantic sense as part of an identifier/slug
+        # (e.g. `foo.bar`). Stray trailing dots after numbers ("12.", "7.") are
+        # model typos that previously cascaded into invalid_number errors.
+        # If the dot is followed by anything non-alpha, skip it silently.
+        if is_binary(next) and
+             ((next >= "a" and next <= "z") or (next >= "A" and next <= "Z") or next == "_") do
+          # Single dot followed by an identifier-like character — part of a slug.
+          tokenize_identifier(state)
+        else
+          # Stray dot — skip silently
+          state
+          |> advance()
+          |> tokenize_line_content()
+        end
     end
   end
 
@@ -671,14 +775,26 @@ defmodule WplAi.Lexer do
           {acc |> Enum.reverse() |> IO.iodata_to_binary(), state}
         end
 
-      # Handle dots carefully - single dot for decimals, but ".." is range operator
+      # Handle dots carefully - single dot for decimals, but ".." is range operator.
+      # A trailing dot with no digit after it ("12.", "7.") is a model typo —
+      # explicitly NOT consumed here. The accumulated digits are emitted as a clean
+      # integer and the dangling dot is left for tokenize_dots to skip silently.
       "." ->
         if peek(state, 1) == "." do
           # This is ".." range operator - stop here
           {acc |> Enum.reverse() |> IO.iodata_to_binary(), state}
         else
-          # Single dot - part of decimal number
-          consume_number_like(advance(state), ["." | acc])
+          next_after_dot = peek(state, 1)
+
+          if is_binary(next_after_dot) and next_after_dot >= "0" and next_after_dot <= "9" do
+            # Digit after dot — valid decimal number, continue
+            consume_number_like(advance(state), ["." | acc])
+          else
+            # No digit after dot — stop before consuming the dot.
+            # The integer part is emitted clean; the dangling dot becomes the
+            # next token's problem (tokenize_dots will skip it silently).
+            {acc |> Enum.reverse() |> IO.iodata_to_binary(), state}
+          end
         end
 
       c when c in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "T", "Z"] ->
