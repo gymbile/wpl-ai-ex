@@ -744,19 +744,33 @@ defmodule WplAi.Compiler do
         compiled
       end
 
-    # Add intensity markers
+    # Add intensity markers — support both scalar (rpe 7) and range (rpe 7..8) forms
     compiled =
-      if ex.rpe do
-        Map.put(compiled, "target_rpe", ex.rpe)
-      else
-        compiled
+      cond do
+        ex.rpe_min && ex.rpe_max ->
+          compiled
+          |> Map.put("target_rpe_min", ex.rpe_min)
+          |> Map.put("target_rpe_max", ex.rpe_max)
+
+        ex.rpe ->
+          Map.put(compiled, "target_rpe", ex.rpe)
+
+        true ->
+          compiled
       end
 
     compiled =
-      if ex.rir do
-        Map.put(compiled, "target_rir", ex.rir)
-      else
-        compiled
+      cond do
+        ex.rir_min && ex.rir_max ->
+          compiled
+          |> Map.put("target_rir_min", ex.rir_min)
+          |> Map.put("target_rir_max", ex.rir_max)
+
+        ex.rir ->
+          Map.put(compiled, "target_rir", ex.rir)
+
+        true ->
+          compiled
       end
 
     # Muscle / movement-pattern tagging (schema v1.3.0+)

@@ -2422,7 +2422,11 @@ defmodule WplAi.Parser do
               sets: trunc(sets),
               reps: reps,
               rpe: modifiers[:rpe],
+              rpe_min: modifiers[:rpe_min],
+              rpe_max: modifiers[:rpe_max],
               rir: modifiers[:rir],
+              rir_min: modifiers[:rir_min],
+              rir_max: modifiers[:rir_max],
               tempo: modifiers[:tempo],
               rest: modifiers[:rest],
               weight: modifiers[:weight],
@@ -2446,7 +2450,11 @@ defmodule WplAi.Parser do
               sets: trunc(sets),
               reps: reps,
               rpe: modifiers[:rpe],
+              rpe_min: modifiers[:rpe_min],
+              rpe_max: modifiers[:rpe_max],
               rir: modifiers[:rir],
+              rir_min: modifiers[:rir_min],
+              rir_max: modifiers[:rir_max],
               tempo: modifiers[:tempo],
               rest: modifiers[:rest],
               weight: modifiers[:weight],
@@ -2471,7 +2479,11 @@ defmodule WplAi.Parser do
               sets: trunc(sets),
               reps: :amrap,
               rpe: modifiers[:rpe],
+              rpe_min: modifiers[:rpe_min],
+              rpe_max: modifiers[:rpe_max],
               rir: modifiers[:rir],
+              rir_min: modifiers[:rir_min],
+              rir_max: modifiers[:rir_max],
               tempo: modifiers[:tempo],
               rest: modifiers[:rest],
               weight: modifiers[:weight],
@@ -2483,9 +2495,21 @@ defmodule WplAi.Parser do
 
             {:ok, exercise, state}
 
-          {:bare_word, unit, _} when unit in ["s", "m", "h", "seconds", "minutes", "hours"] ->
-            # Simple activity with duration (e.g., "jumping_jacks 2m")
+          # Accept both short bare_word units ("m", "s", "h") and long
+          # keyword units ("minutes", "seconds", "hours", "days") so the
+          # unit token is always consumed. Without long-form support the
+          # keyword `minutes` would leak into block-body parsing and
+          # silently truncate subsequent WEEK blocks.
+          {unit_tag, unit, _}
+          when (unit_tag == :bare_word and unit in ["s", "m", "h"]) or
+                 (unit_tag == :keyword and unit in ["seconds", "minutes", "hours", "days"]) ->
+            # Simple activity with duration (e.g., "jumping_jacks 2m" or "cycling 10 minutes")
             state = advance(state)
+            # Consume trailing intensity modifiers (rpe, rir, rest, etc.) — the
+            # SimpleActivity schema has no fields for them, but failing to consume
+            # lets the keywords leak into block-body parsing and silently truncate
+            # subsequent WEEK blocks.
+            state = consume_simple_activity_modifiers(state)
 
             simple = %AST.SimpleActivity{
               name: name,
@@ -2497,6 +2521,8 @@ defmodule WplAi.Parser do
 
           _ ->
             # Simple activity with number only (assume minutes)
+            state = consume_simple_activity_modifiers(state)
+
             simple = %AST.SimpleActivity{
               name: name,
               duration: %AST.Duration{value: sets, unit: :minutes},
@@ -2545,6 +2571,11 @@ defmodule WplAi.Parser do
                 {:ok, {trunc(first), trunc(second), trunc(target)}, state}
 
               _ ->
+                # Same time-unit-suffix handling as the single-number branch.
+                # Range forms like `plank 3x20..30s rpe 6` need the trailing `s` /
+                # `seconds` consumed when a modifier keyword follows, otherwise the
+                # unit token leaks and truncates downstream WEEK blocks.
+                state = maybe_consume_reps_unit_suffix(state)
                 {:ok, {trunc(first), trunc(second)}, state}
             end
 
@@ -2567,8 +2598,86 @@ defmodule WplAi.Parser do
             {:ok, :amrap, state}
 
           _ ->
+            # Tolerate trailing time-unit suffix on the reps number ("20s", "2m") —
+            # BUT only when followed by an exercise modifier keyword. Models often
+            # write `plank 3x30s rpe 6 rest 60 seconds` meaning "3 sets × 30 sec at
+            # RPE 6." Without consuming the `s`, the modifier keywords leak into
+            # parent parsing and silently truncate subsequent WEEK blocks.
+            state = maybe_consume_reps_unit_suffix(state)
             {:ok, trunc(first), state}
         end
+    end
+  end
+
+  # Modifier keywords that can legitimately follow a reps spec on the same line.
+  # When a unit suffix sits between reps and one of these keywords (e.g. `3x30s rpe 6`),
+  # we consume the suffix; otherwise we leave it in the stream so existing conformance
+  # behaviour around terminal `s` (parsed as a separate simple activity) is preserved.
+  @reps_modifier_follow ~w(rpe rir rest tempo weight name to_failure bodyweight)
+
+  # Consume a trailing `s`/`m` or long-form `seconds`/`minutes`/`hours` after a
+  # reps number, but only when the next token after the unit is a known modifier
+  # keyword. This prevents the unit from leaking into block-body parsing.
+  defp maybe_consume_reps_unit_suffix(state) do
+    case current_token(state) do
+      {:bare_word, unit, _} when unit in ["s", "m"] ->
+        check_reps_unit_follow(state)
+
+      {:keyword, unit, _} when unit in ["seconds", "minutes", "hours"] ->
+        check_reps_unit_follow(state)
+
+      _ ->
+        state
+    end
+  end
+
+  defp check_reps_unit_follow(state) do
+    # peek one token ahead — tokens are 0-indexed from state.pos
+    next_pos = state.pos + 1
+
+    if next_pos < length(state.tokens) do
+      case Enum.at(state.tokens, next_pos) do
+        {:keyword, kw, _} when kw in @reps_modifier_follow ->
+          advance(state)
+
+        _ ->
+          state
+      end
+    else
+      state
+    end
+  end
+
+  # Consume trailing exercise-modifier keywords on a simple activity and discard
+  # them. SimpleActivity has no fields for rpe/rir/rest/etc, so the values are
+  # dropped — but consuming the tokens prevents them from leaking into block-body
+  # parsing where they would silently truncate downstream WEEK blocks. Tolerant;
+  # bails on the first token that is not a known modifier keyword.
+  @simple_activity_modifier_keywords ~w(rpe rir rest tempo weight name to_failure
+    bodyweight heart_rate_zone bpm pace)
+
+  defp consume_simple_activity_modifiers(state) do
+    case current_token(state) do
+      {:keyword, kw, _} when kw in @simple_activity_modifier_keywords ->
+        # Consume the modifier keyword then eat its arguments until we reach a
+        # structural boundary or another modifier keyword.
+        state = advance(state)
+        state = consume_until_modifier_or_boundary(state)
+        consume_simple_activity_modifiers(state)
+
+      _ ->
+        state
+    end
+  end
+
+  defp consume_until_modifier_or_boundary(state) do
+    case current_token(state) do
+      {:newline, _, _} -> state
+      {:dedent, _, _} -> state
+      {:indent, _, _} -> state
+      {:eof, _, _} -> state
+      {:keyword, kw, _} when kw in @simple_activity_modifier_keywords -> state
+      _ -> consume_until_modifier_or_boundary(advance(state))
     end
   end
 
@@ -2615,13 +2724,47 @@ defmodule WplAi.Parser do
     case current_token(state) do
       {:keyword, "rpe", _} ->
         state = advance(state)
-        {:ok, value, state} = expect_number(state)
-        parse_exercise_modifiers(state, Map.put(modifiers, :rpe, trunc(value)))
+        {:ok, first, state} = expect_number(state)
+
+        # Support `rpe 7..8` range syntax — models frequently emit ranges
+        # to express target zones; the range token previously leaked into
+        # downstream parsing and silently truncated entire WEEK blocks.
+        case current_token(state) do
+          {:range, _, _} ->
+            state = advance(state)
+            {:ok, second, state} = expect_number(state)
+
+            modifiers =
+              modifiers
+              |> Map.put(:rpe_min, trunc(first))
+              |> Map.put(:rpe_max, trunc(second))
+
+            parse_exercise_modifiers(state, modifiers)
+
+          _ ->
+            parse_exercise_modifiers(state, Map.put(modifiers, :rpe, trunc(first)))
+        end
 
       {:keyword, "rir", _} ->
         state = advance(state)
-        {:ok, value, state} = expect_number(state)
-        parse_exercise_modifiers(state, Map.put(modifiers, :rir, trunc(value)))
+        {:ok, first, state} = expect_number(state)
+
+        # Support `rir 1..2` range syntax — same reasoning as rpe ranges above.
+        case current_token(state) do
+          {:range, _, _} ->
+            state = advance(state)
+            {:ok, second, state} = expect_number(state)
+
+            modifiers =
+              modifiers
+              |> Map.put(:rir_min, trunc(first))
+              |> Map.put(:rir_max, trunc(second))
+
+            parse_exercise_modifiers(state, modifiers)
+
+          _ ->
+            parse_exercise_modifiers(state, Map.put(modifiers, :rir, trunc(first)))
+        end
 
       {:keyword, "tempo", _} ->
         state = advance(state)
@@ -3053,9 +3196,22 @@ defmodule WplAi.Parser do
     case current_token(state) do
       {:keyword, "rpe", _} ->
         state = advance(state)
-        {:ok, value, state} = expect_number(state)
-        intensity = %AST.Intensity{type: :rpe, value: value, range: nil}
-        {:ok, intensity, state}
+        {:ok, first, state} = expect_number(state)
+
+        # Support `rpe 7..8` (range) in addition to `rpe 7` (single value).
+        # Models commonly emit ranges to express target zones; treating them
+        # as a syntax error silently truncated the rest of the document.
+        case current_token(state) do
+          {:range, _, _} ->
+            state = advance(state)
+            {:ok, second, state} = expect_number(state)
+            intensity = %AST.Intensity{type: :rpe, value: nil, range: {first, second}}
+            {:ok, intensity, state}
+
+          _ ->
+            intensity = %AST.Intensity{type: :rpe, value: first, range: nil}
+            {:ok, intensity, state}
+        end
 
       {:keyword, "heart_rate_zone", _} ->
         state = advance(state)
