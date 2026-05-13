@@ -24,6 +24,24 @@ defmodule WplAi.ExerciseMatcherTest do
       assert ExerciseMatcher.known?("turkish_getup") == true
     end
 
+    test "recognises the v1.13 vocabulary additions (rehab + variants)" do
+      # Every entry below appeared as an unknown_exercise_ref in the
+      # wpl-eval v0.2.0 corpus. Adding them removes the head-of-cascade
+      # error for those trials and lets the orchestrator focus on real
+      # structural issues rather than vocabulary gaps.
+      v113_additions = ~w(
+        inverted_row hangboard
+        scapular_retraction external_rotation internal_rotation
+        prone_T prone_Y prone_W
+        pelvic_tilt diaphragmatic_breathing
+      )
+
+      for name <- v113_additions do
+        assert ExerciseMatcher.known?(name) == true,
+               "expected #{name} to be a known exercise"
+      end
+    end
+
     test "returns false for a spaced variant (not canonical)" do
       assert ExerciseMatcher.known?("push up") == false
     end

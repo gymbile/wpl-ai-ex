@@ -7,6 +7,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [1.13.0] — 2026-05-13
+
+### Added — vocabulary expansion (TS parity with @gymbile/wpl-ai@1.13.0)
+
+Mirrors the corpus-driven additions in the TypeScript reference.
+Every entry below appeared as an unknown_exercise_ref in the
+wpl-eval v0.2.0 audit and is a genuine (non-typo) emission observed
+in at least one trial:
+
+- **@upper_body**: `inverted_row`, `hangboard`
+- **@rehab_mobility** (new module attribute):
+  - Rotator-cuff / shoulder rehab: `scapular_retraction`,
+    `external_rotation`, `internal_rotation`, `prone_T`, `prone_Y`,
+    `prone_W`
+  - Pelvic floor / postpartum / pregnancy: `pelvic_tilt`,
+    `diaphragmatic_breathing`
+
+`exercises_by_category/0` returns the new `:rehab_mobility` key
+alongside the existing six.
+
+### Internal
+- All 521 tests pass (1 added for v1.13 vocabulary additions).
+
 ## [1.12.0] — 2026-05-13
 
 ### Version jump 1.8.0 → 1.12.0 to restore TS/Elixir parity
