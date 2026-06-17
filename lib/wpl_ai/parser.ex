@@ -281,33 +281,50 @@ defmodule WplAi.Parser do
       # These aren't part of the grammar, but they don't change the safety
       # contract — they're prose annotations. Skip the whole sub-block
       # (keyword + colon + indented body) silently so the compile succeeds.
-      {:keyword, caps_kw, _} ->
+      {:keyword, caps_kw, loc} ->
         if Regex.match?(~r/^[A-Z_]+$/, caps_kw) and
              match?({:colon, _, _}, current_token(advance(state))) do
-          state = advance(state)
-          # skip keyword
-          state = advance(state)
-          # skip ":"
-          state = skip_newlines(state)
+          # Fail-closed: safety-adjacent section names (REQUIRE*, CONTRA*,
+          # SAFETY*, PRECAUTION*, MEDICAL*, CLEARANCE*) are hard parse errors.
+          # A typo here would silently erase contraindications with no trace.
+          if Regex.match?(~r/^(REQUIRE|CONTRA|SAFETY|PRECAUTION|MEDICAL|CLEARANCE)/, caps_kw) do
+            error =
+              ParseError.invalid_structure(
+                "Safety-adjacent section '#{caps_kw}:' is not a recognised WPL-AI keyword. " <>
+                  "A typo here would silently erase contraindications. " <>
+                  "Did you mean REQUIRES?",
+                loc
+              )
 
-          state =
-            case current_token(state) do
-              {:indent, _, _} ->
-                state = advance(state)
-                skip_until_matching_dedent(state, 1)
+            state = %{state | errors: [error | state.errors]}
+            {:error, Enum.reverse(state.errors)}
+          else
+            # Non-safety unknown section: record repair and skip body.
+            state = advance(state)
+            # skip keyword
+            state = advance(state)
+            # skip ":"
+            state = skip_newlines(state)
 
-              _ ->
-                state
-            end
+            state =
+              case current_token(state) do
+                {:indent, _, _} ->
+                  state = advance(state)
+                  skip_until_matching_dedent(state, 1)
 
-          state =
-            add_repair(state, %{
-              type: :skipped_section,
-              section: caps_kw,
-              message: "Unknown top-level section \"#{caps_kw}\" skipped"
-            })
+                _ ->
+                  state
+              end
 
-          parse_sections(state, sections)
+            state =
+              add_repair(state, %{
+                type: :skipped_section,
+                section: caps_kw,
+                message: "Unknown top-level section \"#{caps_kw}\" skipped"
+              })
+
+            parse_sections(state, sections)
+          end
         else
           # Not an ALL-CAPS block header — skip one token and keep looking.
           parse_sections(advance(state), sections)
@@ -748,9 +765,22 @@ defmodule WplAi.Parser do
       {:arrow, _, _} ->
         # Old arrow form
         state = advance(state)
+        action_loc = current_location(state)
         {:ok, action_str, state} = expect_bare_word(state)
 
-        action = parse_contraindication_action(action_str)
+        {action, state} =
+          if action_str in ["exclude", "modify", "require_clearance"] do
+            {parse_contraindication_action(action_str), state}
+          else
+            error =
+              ParseError.invalid_structure(
+                "Unknown contraindication action '#{action_str}'. Expected: exclude, modify, require_clearance.",
+                action_loc
+              )
+
+            state = %{state | errors: [error | state.errors]}
+            {:exclude, state}
+          end
 
         {affects_list, state} = parse_contraindication_affects(state)
 
@@ -775,8 +805,15 @@ defmodule WplAi.Parser do
                 when tag in [:keyword, :bare_word] and level in ["low", "moderate", "high"] ->
                   {String.to_atom(level), advance(state)}
 
-                _ ->
-                  {nil, state}
+                {_tag, bad_level, loc} ->
+                  error =
+                    ParseError.invalid_structure(
+                      "Unknown contraindication severity '#{bad_level}'. Expected: low, moderate, high.",
+                      loc
+                    )
+
+                  state = %{state | errors: [error | state.errors]}
+                  {nil, advance(state)}
               end
 
             _ ->
@@ -787,8 +824,23 @@ defmodule WplAi.Parser do
           case current_token(state) do
             {tag, "action", _} when tag in [:keyword, :bare_word] ->
               state = advance(state)
-              {:ok, action_str, state} = expect_bare_word(state)
-              {parse_contraindication_action(action_str), state}
+
+              case current_token(state) do
+                {tag2, action_str, _}
+                when tag2 in [:keyword, :bare_word] and
+                       action_str in ["exclude", "modify", "require_clearance"] ->
+                  {parse_contraindication_action(action_str), advance(state)}
+
+                {_tag2, bad_action, loc} ->
+                  error =
+                    ParseError.invalid_structure(
+                      "Unknown contraindication action '#{bad_action}'. Expected: exclude, modify, require_clearance.",
+                      loc
+                    )
+
+                  state = %{state | errors: [error | state.errors]}
+                  {:exclude, advance(state)}
+              end
 
             _ ->
               {:exclude, state}
@@ -810,10 +862,18 @@ defmodule WplAi.Parser do
 
   defp parse_contraindication_action(str) do
     case str do
-      "exclude" -> :exclude
-      "modify" -> :modify
-      "require_clearance" -> :require_clearance
-      _ -> :exclude
+      "exclude" ->
+        :exclude
+
+      "modify" ->
+        :modify
+
+      "require_clearance" ->
+        :require_clearance
+
+      other ->
+        raise ArgumentError,
+              "parse_contraindication_action/1 called with unvalidated action: #{inspect(other)}"
     end
   end
 

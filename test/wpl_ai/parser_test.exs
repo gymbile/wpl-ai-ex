@@ -441,4 +441,183 @@ defmodule WplAi.ParserTest do
       assert Enum.at(phase.weeks, 2).days == []
     end
   end
+
+  # ==========================================================================
+  # A2 — Fail-closed safety sections
+  # ==========================================================================
+
+  describe "parse/1 - fail-closed safety sections" do
+    test "REQUIREMENTS: typo is a hard parse error, not a silent skip" do
+      source = ~S"""
+      PLAN "Bad Plan"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      REQUIREMENTS:
+        contraindication knee_pain -> exclude
+      """
+
+      assert {:error, errors} = Parser.parse(source)
+
+      assert Enum.any?(errors, fn e ->
+               message = if is_map(e), do: Map.get(e, :message) || "", else: ""
+               String.contains?(message, "REQUIREMENTS")
+             end)
+    end
+
+    test "CONTRAINDICATIONS: typo is a hard parse error" do
+      source = ~S"""
+      PLAN "Bad Plan"
+      TYPE workout
+      CONTRAINDICATIONS:
+        knee_pain -> exclude
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:error, _errors} = Parser.parse(source)
+    end
+
+    test "SAFETY_NOTES: is a hard parse error (safety-adjacent prefix)" do
+      source = ~S"""
+      PLAN "Bad Plan"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      SAFETY_NOTES:
+        Some notes.
+      """
+
+      assert {:error, _errors} = Parser.parse(source)
+    end
+
+    test "NOTES: (non-safety) is silently skipped with a repair" do
+      source = ~S"""
+      PLAN "Clean Plan"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      NOTES:
+        Some prose.
+      """
+
+      assert {:ok, _doc, repairs} = Parser.parse(source)
+      assert Enum.any?(repairs, &(&1.type == :skipped_section))
+    end
+  end
+
+  # ==========================================================================
+  # A2 — Strict contraindications
+  # ==========================================================================
+
+  describe "parse/1 - strict contraindications" do
+    test "unknown contraindication severity is a hard parse error" do
+      source = ~S"""
+      PLAN "Bad Plan"
+      TYPE workout
+      REQUIRES
+        contraindication knee_pain severity extreme action exclude
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:error, errors} = Parser.parse(source)
+      assert length(errors) >= 1
+    end
+
+    test "unknown contraindication action is a hard parse error" do
+      source = ~S"""
+      PLAN "Bad Plan"
+      TYPE workout
+      REQUIRES
+        contraindication knee_pain action banish
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:error, errors} = Parser.parse(source)
+      assert length(errors) >= 1
+    end
+
+    test "valid contraindication with known severity and action parses cleanly" do
+      source = ~S"""
+      PLAN "Good Plan"
+      TYPE workout
+      REQUIRES
+        contraindication knee_pain severity high action modify
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      contra = doc.requirements.contraindications |> hd()
+      assert contra.severity == :high
+      assert contra.action == :modify
+    end
+
+    test "unknown action in legacy arrow form is a hard parse error" do
+      source = ~S"""
+      PLAN "Bad Plan"
+      TYPE workout
+      REQUIRES
+        contraindication knee_pain -> smash
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:error, errors} = Parser.parse(source)
+      assert length(errors) >= 1
+    end
+
+    test "valid action in legacy arrow form parses cleanly" do
+      source = ~S"""
+      PLAN "Good Plan"
+      TYPE workout
+      REQUIRES
+        contraindication knee_pain -> exclude
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      contra = doc.requirements.contraindications |> hd()
+      assert contra.action == :exclude
+    end
+  end
 end
