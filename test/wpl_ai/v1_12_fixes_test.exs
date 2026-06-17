@@ -16,7 +16,7 @@ defmodule WplAi.V112FixesTest do
 
   defp compile!(src) do
     case WplAi.to_wpl(src) do
-      {:ok, json} -> json
+      {:ok, json, _repairs} -> json
       {:error, errors} -> flunk("Expected compile to succeed, got errors: #{inspect(errors)}")
     end
   end
@@ -470,7 +470,7 @@ defmodule WplAi.V112FixesTest do
         Consult a physician before starting.
       """
 
-      assert {:ok, _} = WplAi.to_wpl(src)
+      assert {:ok, _, _} = WplAi.to_wpl(src)
     end
   end
 
@@ -502,7 +502,7 @@ defmodule WplAi.V112FixesTest do
                 push_up 3x10
       """
 
-      assert {:ok, _} = WplAi.to_wpl(src)
+      assert {:ok, _, _} = WplAi.to_wpl(src)
     end
 
     test "TYPE program falls back without error" do
@@ -519,7 +519,7 @@ defmodule WplAi.V112FixesTest do
                 push_up 3x10
       """
 
-      assert {:ok, _} = WplAi.to_wpl(src)
+      assert {:ok, _, _} = WplAi.to_wpl(src)
     end
   end
 
@@ -550,7 +550,7 @@ defmodule WplAi.V112FixesTest do
 
     test "scapular_retraction is accepted as-is (real exercise, not in vocabulary)" do
       src = two_week_plan("scapular_retraction 3x15")
-      assert {:ok, _} = WplAi.to_wpl(src)
+      assert {:ok, _, _} = WplAi.to_wpl(src)
     end
 
     test "accepted-as-is ref is preserved in exercise_ref field" do

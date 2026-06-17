@@ -71,7 +71,7 @@ defmodule WplAi.TierEFeaturesTest do
           "  contraindication high_blood_pressure severity high action require_clearance\n"
         )
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       contraindications = json["plan"]["requirements"]["contraindications"]
       ci = List.first(contraindications)
       assert ci["condition"] == "high_blood_pressure"
@@ -81,7 +81,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "parses severity moderate with modify action" do
       src = with_requires("  contraindication knee_pain severity moderate action modify\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       contraindications = json["plan"]["requirements"]["contraindications"]
       ci = List.first(contraindications)
       assert ci["condition"] == "knee_pain"
@@ -91,7 +91,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "parses severity low with exclude action" do
       src = with_requires("  contraindication mild_arthritis severity low action exclude\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       contraindications = json["plan"]["requirements"]["contraindications"]
       ci = List.first(contraindications)
       assert ci["condition"] == "mild_arthritis"
@@ -101,7 +101,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "back-compat: old arrow-style contraindication still works" do
       src = with_requires("  contraindication lower_back -> modify\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       contraindications = json["plan"]["requirements"]["contraindications"]
       ci = List.first(contraindications)
       assert ci["condition"] == "lower_back"
@@ -111,7 +111,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "action-only (no severity) does not emit severity field" do
       src = with_requires("  contraindication heart_condition action require_clearance\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       contraindications = json["plan"]["requirements"]["contraindications"]
       ci = List.first(contraindications)
       assert ci["action"] == "require_clearance"
@@ -126,7 +126,7 @@ defmodule WplAi.TierEFeaturesTest do
   describe "Feature 2 — Reps.amrap" do
     test "1xAMRAP emits reps.amrap: true with no target" do
       src = with_main_block("          push_up 1xAMRAP rpe 9\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       reps = act["prescription"]["reps"]
       assert reps["amrap"] == true
@@ -135,7 +135,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "3xAMRAP emits sets=3 with reps.amrap: true" do
       src = with_main_block("          bench_press 3xAMRAP weight 80% rm\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["sets"] == 3
       assert act["prescription"]["reps"]["amrap"] == true
@@ -143,14 +143,14 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "lowercase amrap token also works" do
       src = with_main_block("          squat 1x amrap\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["reps"]["amrap"] == true
     end
 
     test "normal reps (no amrap) do not emit amrap field" do
       src = with_main_block("          push_up 3x10\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       reps = act["prescription"]["reps"]
       refute Map.has_key?(reps, "amrap")
@@ -167,21 +167,21 @@ defmodule WplAi.TierEFeaturesTest do
       src =
         with_main_block("          bench_press 3x6 weight 80% rm to_failure rest 120 seconds\n")
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["to_failure"] == true
     end
 
     test "emits to_failure without any other modifiers" do
       src = with_main_block("          push_up 3x10 to_failure\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["to_failure"] == true
     end
 
     test "to_failure can appear before rpe" do
       src = with_main_block("          squat 4x8 to_failure rpe 9\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["to_failure"] == true
       assert act["target_rpe"] == 9
@@ -189,7 +189,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "without to_failure the field is absent" do
       src = with_main_block("          push_up 3x10 rpe 7\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       refute Map.has_key?(act["prescription"], "to_failure")
     end
@@ -202,7 +202,7 @@ defmodule WplAi.TierEFeaturesTest do
   describe "Feature 4 — Weight.metric qualifier" do
     test "metric training_max is emitted" do
       src = with_main_block("          squat 3x5 weight 80% rm metric training_max\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       wt = act["prescription"]["weight"]
       assert wt["type"] == "percentage_1rm"
@@ -212,28 +212,28 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "metric e1rm maps to canonical e1RM" do
       src = with_main_block("          deadlift 3x3 weight 90% rm metric e1rm\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["weight"]["metric"] == "e1RM"
     end
 
     test "metric 1rm maps to canonical 1RM" do
       src = with_main_block("          squat 5x5 weight 75% rm metric 1rm\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["weight"]["metric"] == "1RM"
     end
 
     test "metric daily_max is emitted verbatim" do
       src = with_main_block("          bench_press 3x3 weight 85% rm metric daily_max\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       assert act["prescription"]["weight"]["metric"] == "daily_max"
     end
 
     test "weight without metric does not emit metric field" do
       src = with_main_block("          squat 3x5 weight 80% rm\n")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       refute Map.has_key?(act["prescription"]["weight"], "metric")
     end
@@ -246,7 +246,7 @@ defmodule WplAi.TierEFeaturesTest do
   describe "Feature 5 — RecoveryExercise modality/pnf/intensity_rpe/body_part" do
     test "parses modality static_stretch" do
       src = with_recovery_activity("hip_flexor_stretch 30s x2 sides both modality static_stretch")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       ex = List.first(act["prescription"]["exercises"])
       assert ex["modality"] == "static_stretch"
@@ -254,7 +254,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "parses modality dynamic_stretch" do
       src = with_recovery_activity("leg_swing 10s x10 modality dynamic_stretch")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       ex = List.first(act["prescription"]["exercises"])
       assert ex["modality"] == "dynamic_stretch"
@@ -262,7 +262,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "parses intensity_rpe from intensity keyword" do
       src = with_recovery_activity("hamstring_stretch 30s x3 modality static_stretch intensity 6")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       ex = List.first(act["prescription"]["exercises"])
       assert ex["intensity_rpe"] == 6
@@ -270,7 +270,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "parses body_part from body keyword" do
       src = with_recovery_activity("pigeon_pose 45s x2 body hip_flexors")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       ex = List.first(act["prescription"]["exercises"])
       assert ex["body_part"] == "hip_flexors"
@@ -282,7 +282,7 @@ defmodule WplAi.TierEFeaturesTest do
           "hip_flexor_stretch 30s x2 sides both modality pnf intensity 6 body hip_flexors"
         )
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       ex = List.first(act["prescription"]["exercises"])
       assert ex["modality"] == "pnf"
@@ -297,7 +297,7 @@ defmodule WplAi.TierEFeaturesTest do
           "pnf 6s contract 20s relax 3 contractions"
         )
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       ex = List.first(act["prescription"]["exercises"])
       pnf = ex["pnf"]
@@ -309,7 +309,7 @@ defmodule WplAi.TierEFeaturesTest do
 
     test "back-compat: recovery exercise without new modifiers still works" do
       src = with_recovery_activity("hamstring_stretch 30s x2 sides both")
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       ex = List.first(act["prescription"]["exercises"])
       refute Map.has_key?(ex, "modality")
@@ -330,7 +330,7 @@ defmodule WplAi.TierEFeaturesTest do
           "  CHECKPOINT \"Baseline\":\n    at 0 weeks\n    measure:\n      body_weight_kg\n"
         )
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       cp = json["plan"]["progress"]["checkpoints"] |> List.first()
       m = cp["measurements"] |> List.first()
       assert m["metric"] == "body_weight_kg"
@@ -342,7 +342,7 @@ defmodule WplAi.TierEFeaturesTest do
           "  CHECKPOINT \"Week 4\":\n    at 4 weeks\n    measure:\n      questionnaire_score questionnaire psqi note \"sleep quality\"\n"
         )
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       cp = json["plan"]["progress"]["checkpoints"] |> List.first()
       m = cp["measurements"] |> List.first()
       assert m["metric"] == "questionnaire_score"
@@ -356,7 +356,7 @@ defmodule WplAi.TierEFeaturesTest do
           "  CHECKPOINT \"Baseline\":\n    at 0 weeks\n    measure:\n      \"photos\"\n      \"body_fat\"\n"
         )
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       cp = json["plan"]["progress"]["checkpoints"] |> List.first()
       measurements = cp["measurements"]
       assert Enum.at(measurements, 0) == "photos"
@@ -369,7 +369,7 @@ defmodule WplAi.TierEFeaturesTest do
           "  CHECKPOINT \"Mixed\":\n    at 4 weeks\n    measure:\n      body_weight_kg\n      \"photos\"\n      hrv_rmssd_ms\n"
         )
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       cp = json["plan"]["progress"]["checkpoints"] |> List.first()
       measurements = cp["measurements"]
       assert length(measurements) == 3
@@ -391,7 +391,7 @@ defmodule WplAi.TierEFeaturesTest do
           phases_header() <>
           "        main:\n          cardio running continuous:\n            total 30 minutes\n            intensity bpm 150..170\n"
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       intensity = act["prescription"]["intensity"]
       assert intensity != nil
@@ -408,7 +408,7 @@ defmodule WplAi.TierEFeaturesTest do
           phases_header() <>
           "        main:\n          cardio running continuous:\n            total 30 minutes\n            zone 2\n"
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       intensity = act["prescription"]["intensity"]
       assert intensity["zone"] == 2
@@ -422,7 +422,7 @@ defmodule WplAi.TierEFeaturesTest do
           phases_header() <>
           "        main:\n          cardio cycling continuous:\n            total 45 minutes\n            intensity bpm 140..160\n"
 
-      assert {:ok, json} = WplAi.to_wpl(src)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(src)
       act = get_first_activity(json)
       target = act["prescription"]["intensity"]["target"]
       assert target["min_bpm"] == 140

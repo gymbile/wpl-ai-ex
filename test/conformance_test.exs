@@ -142,7 +142,7 @@ defmodule WplAi.ConformanceTest do
         source = File.read!(@source_file)
         expected_raw = @expected_file |> File.read!() |> :elixir_json.decode()
 
-        assert {:ok, compiled} = WplAi.to_wpl(source),
+        assert {:ok, compiled, _repairs} = WplAi.to_wpl(source),
                "[conformance/#{@label}] compilation failed"
 
         got = normalize_value(compiled)

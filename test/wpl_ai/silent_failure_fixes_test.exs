@@ -13,21 +13,21 @@ defmodule WplAi.SilentFailureFixesTest do
 
   defp parse_ok!(src) do
     case WplAi.Parser.parse(src) do
-      {:ok, doc} -> doc
+      {:ok, doc, _repairs} -> doc
       {:error, errors} -> flunk("Expected parse to succeed, got errors: #{inspect(errors)}")
     end
   end
 
   defp parse_errors!(src) do
     case WplAi.Parser.parse(src) do
-      {:ok, _} -> flunk("Expected parse to fail, but it succeeded")
+      {:ok, _, _} -> flunk("Expected parse to fail, but it succeeded")
       {:error, errors} -> Enum.map(errors, & &1.message)
     end
   end
 
   defp compile_plan!(src) do
     case WplAi.to_wpl(src) do
-      {:ok, json} -> json["plan"]
+      {:ok, json, _repairs} -> json["plan"]
       {:error, errors} -> flunk("Expected compile to succeed, got errors: #{inspect(errors)}")
     end
   end

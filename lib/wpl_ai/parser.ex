@@ -11,18 +11,21 @@ defmodule WplAi.Parser do
   alias WplAi.Lexer
   alias WplAi.Errors.{ParseError, Location}
 
+  @type repair :: %{:type => atom(), :message => String.t(), optional(atom()) => any()}
+
   @type parse_state :: %{
           tokens: [Lexer.token()],
           pos: non_neg_integer(),
-          errors: [ParseError.t()]
+          errors: [ParseError.t()],
+          repairs: [repair()]
         }
 
   @doc """
   Parse WPL-AI source text into an AST.
 
-  Returns `{:ok, AST.Document.t()}` or `{:error, errors}`.
+  Returns `{:ok, AST.Document.t(), [repair()]}` on success, or `{:error, errors}` on failure.
   """
-  @spec parse(String.t()) :: {:ok, AST.Document.t()} | {:error, list()}
+  @spec parse(String.t()) :: {:ok, AST.Document.t(), [repair()]} | {:error, list()}
   def parse(source) do
     case Lexer.tokenize(source) do
       {:ok, tokens} ->
@@ -36,17 +39,18 @@ defmodule WplAi.Parser do
   @doc """
   Parse tokens into an AST (for testing with pre-tokenized input).
   """
-  @spec parse_tokens([Lexer.token()]) :: {:ok, AST.Document.t()} | {:error, list()}
+  @spec parse_tokens([Lexer.token()]) :: {:ok, AST.Document.t(), [repair()]} | {:error, list()}
   def parse_tokens(tokens) do
     state = %{
       tokens: tokens,
       pos: 0,
-      errors: []
+      errors: [],
+      repairs: []
     }
 
     case parse_document(state) do
-      {:ok, document, %{errors: []}} ->
-        {:ok, document}
+      {:ok, document, %{errors: [], repairs: repairs}} ->
+        {:ok, document, Enum.reverse(repairs)}
 
       {:ok, _document, %{errors: errors}} ->
         {:error, Enum.reverse(errors)}
@@ -54,6 +58,14 @@ defmodule WplAi.Parser do
       {:error, errors} ->
         {:error, errors}
     end
+  end
+
+  # =============================================================================
+  # Repair Helpers
+  # =============================================================================
+
+  defp add_repair(state, repair) when is_map(repair) do
+    %{state | repairs: [repair | state.repairs]}
   end
 
   # =============================================================================
@@ -287,6 +299,13 @@ defmodule WplAi.Parser do
               _ ->
                 state
             end
+
+          state =
+            add_repair(state, %{
+              type: :skipped_section,
+              section: caps_kw,
+              message: "Unknown top-level section \"#{caps_kw}\" skipped"
+            })
 
           parse_sections(state, sections)
         else

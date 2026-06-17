@@ -41,7 +41,7 @@ defmodule WplAiTest do
                 chest_stretch 30s x2 sides both
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
 
       # Header assertions
       assert doc.header.name == "Upper Body Beginner"
@@ -148,7 +148,7 @@ defmodule WplAiTest do
       TYPE workout
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert doc.header.name == "Minimal"
       assert doc.header.type == :workout
       assert doc.header.visibility == nil
@@ -162,7 +162,7 @@ defmodule WplAiTest do
         TYPE #{type}
         """
 
-        assert {:ok, doc} = WplAi.parse(source)
+        assert {:ok, doc, _repairs} = WplAi.parse(source)
         assert doc.header.type == String.to_atom(type)
       end
     end
@@ -175,7 +175,7 @@ defmodule WplAiTest do
         DIFFICULTY #{difficulty}
         """
 
-        assert {:ok, doc} = WplAi.parse(source)
+        assert {:ok, doc, _repairs} = WplAi.parse(source)
         assert doc.header.difficulty == String.to_atom(difficulty)
       end
     end
@@ -194,7 +194,7 @@ defmodule WplAiTest do
           target weight 2 kg absolute
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert length(doc.goals) == 2
 
       [primary, secondary] = doc.goals
@@ -221,7 +221,7 @@ defmodule WplAiTest do
             reduce intensity by 20 %
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [rule] = doc.personalization.rules
 
       assert rule.condition.type == :compound
@@ -240,7 +240,7 @@ defmodule WplAiTest do
             exclude jump_squat
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [rule] = doc.personalization.rules
 
       assert rule.condition.type == :compound
@@ -260,7 +260,7 @@ defmodule WplAiTest do
             reduce sets by 1
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [rule] = doc.personalization.rules
       assert length(rule.actions) == 3
 
@@ -285,7 +285,7 @@ defmodule WplAiTest do
                 bench_press 4x6..8 target 7 rpe 8 rir 2 rest 90 seconds weight 80 kg
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[exercise]] = get_activities(doc)
 
       assert exercise.exercise_ref == "bench_press"
@@ -312,7 +312,7 @@ defmodule WplAiTest do
                 pull_up 3x5 weight bodyweight
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[exercise]] = get_activities(doc)
 
       assert exercise.weight.type == :bodyweight
@@ -331,7 +331,7 @@ defmodule WplAiTest do
                 plank 3x30
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[exercise]] = get_activities(doc)
 
       assert exercise.sets == 3
@@ -355,7 +355,7 @@ defmodule WplAiTest do
                   zone 3
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[cardio]] = get_activities(doc)
 
       assert %AST.Cardio{} = cardio
@@ -381,7 +381,7 @@ defmodule WplAiTest do
                   30s work / 30s rest x10
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[cardio]] = get_activities(doc)
 
       assert %AST.Cardio{} = cardio
@@ -409,7 +409,7 @@ defmodule WplAiTest do
                   fat 10..15 g
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[nutrition]] = get_activities(doc)
 
       assert %AST.Nutrition{} = nutrition
@@ -436,7 +436,7 @@ defmodule WplAiTest do
                   guided true
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[meditation]] = get_activities(doc)
 
       assert %AST.Meditation{} = meditation
@@ -463,7 +463,7 @@ defmodule WplAiTest do
                   frequency daily
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[habit]] = get_activities(doc)
 
       assert %AST.Habit{} = habit
@@ -543,7 +543,7 @@ defmodule WplAiTest do
                 plank 3x30
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       refs = WplAi.exercise_refs(doc)
 
       assert "push_up" in refs
@@ -574,7 +574,7 @@ defmodule WplAiTest do
                   duration 10 minutes
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       counts = WplAi.activity_counts(doc)
 
       assert counts[:exercise] == 2
@@ -595,7 +595,7 @@ defmodule WplAiTest do
       TYPE workout
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert {:ok, json} = WplAi.compile(doc)
 
       assert json["$schema"] == "https://wpl.dev/schemas/wpl/v1.schema.json"
@@ -612,7 +612,7 @@ defmodule WplAiTest do
       DIFFICULTY beginner
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
 
       assert json["plan"]["name"] == "Combined"
       assert json["plan"]["type"] == "workout"
@@ -630,7 +630,7 @@ defmodule WplAiTest do
       LANGUAGE en
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       metadata = json["plan"]["metadata"]
 
       assert metadata["difficulty"] == "intermediate"
@@ -654,7 +654,7 @@ defmodule WplAiTest do
           target weight 2 kg absolute
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       goals = json["plan"]["goals"]
 
       assert length(goals) == 2
@@ -683,7 +683,7 @@ defmodule WplAiTest do
           target strength 10 % relative
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       goals = json["plan"]["goals"]
 
       [primary, secondary] = goals
@@ -702,7 +702,7 @@ defmodule WplAiTest do
           target strength 10 % relative
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [goal] = json["plan"]["goals"]
       assert goal["name"] == "Build Upper Body Strength"
     end
@@ -722,7 +722,7 @@ defmodule WplAiTest do
           mat (optional)
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       req = json["plan"]["requirements"]
 
       assert req["min_age"] == 18
@@ -751,7 +751,7 @@ defmodule WplAiTest do
             exclude jump_squat
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       pers = json["plan"]["personalization"]
 
       assert length(pers["rules"]) == 1
@@ -775,7 +775,7 @@ defmodule WplAiTest do
             reduce intensity by 20 %
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [rule] = json["plan"]["personalization"]["rules"]
 
       assert rule["condition"]["operator"] == "and"
@@ -801,7 +801,7 @@ defmodule WplAiTest do
                 push_up 3x12
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       phases = json["plan"]["phases"]
 
       assert length(phases) == 1
@@ -841,7 +841,7 @@ defmodule WplAiTest do
                 bench_press 4x6..8 target 7 rpe 8 rest 90 seconds weight 80 kg
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[exercise]] = get_json_activities(json)
 
       assert exercise["type"] == "exercise"
@@ -870,7 +870,7 @@ defmodule WplAiTest do
                 pull_up 3x5 weight bodyweight
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[exercise]] = get_json_activities(json)
 
       assert exercise["prescription"]["weight"]["type"] == "bodyweight"
@@ -893,7 +893,7 @@ defmodule WplAiTest do
                   zone 3
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[cardio]] = get_json_activities(json)
 
       assert cardio["type"] == "cardio"
@@ -919,7 +919,7 @@ defmodule WplAiTest do
                   30s work / 30s rest x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[cardio]] = get_json_activities(json)
 
       assert cardio["prescription"]["type"] == "intervals"
@@ -946,7 +946,7 @@ defmodule WplAiTest do
                   fat 10..15 g
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[nutrition]] = get_json_activities(json)
 
       assert nutrition["type"] == "nutrition"
@@ -974,7 +974,7 @@ defmodule WplAiTest do
                   guided true
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[meditation]] = get_json_activities(json)
 
       assert meditation["type"] == "meditation"
@@ -998,7 +998,7 @@ defmodule WplAiTest do
                 chest_stretch 30s x2 sides both
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[recovery]] = get_json_activities(json)
 
       assert recovery["type"] == "recovery_exercise"
@@ -1025,7 +1025,7 @@ defmodule WplAiTest do
                   frequency daily
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[habit]] = get_json_activities(json)
 
       assert habit["type"] == "habit"
@@ -1053,7 +1053,7 @@ defmodule WplAiTest do
                 squat 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
 
       [block] =
         json["plan"]["phases"]
@@ -1108,7 +1108,7 @@ defmodule WplAiTest do
       """
 
       # Parse and compile
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
 
       # Verify top-level structure
       assert json["$schema"] == "https://wpl.dev/schemas/wpl/v1.schema.json"
@@ -1440,11 +1440,11 @@ defmodule WplAiTest do
       """
 
       # First pass
-      assert {:ok, json1} = WplAi.to_wpl(source)
+      assert {:ok, json1, _repairs1} = WplAi.to_wpl(source)
       assert {:ok, text1} = WplAi.decompile(json1)
 
       # Re-parse the decompiled text
-      assert {:ok, json2} = WplAi.to_wpl(text1)
+      assert {:ok, json2, _repairs2} = WplAi.to_wpl(text1)
 
       # Verify semantic equality
       assert json1["plan"]["name"] == json2["plan"]["name"]
@@ -1654,7 +1654,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, _json} = WplAi.to_wpl(source)
+      assert {:ok, _json, _repairs} = WplAi.to_wpl(source)
     end
 
     test "parses WEEK 10, 11, 12 together (the exact production failure)" do
@@ -1678,7 +1678,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [phase] = json["plan"]["phases"]
       assert Enum.map(phase["weeks"], & &1["order"]) == [10, 11, 12]
     end
@@ -1699,7 +1699,7 @@ defmodule WplAiTest do
       #{weeks}
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [phase] = json["plan"]["phases"]
       assert Enum.map(phase["weeks"], & &1["order"]) == Enum.to_list(1..12)
     end
@@ -1717,7 +1717,7 @@ defmodule WplAiTest do
                 push_up 3x10 at 10:30
       """
 
-      assert {:ok, _json} = WplAi.to_wpl(source)
+      assert {:ok, _json, _repairs} = WplAi.to_wpl(source)
     end
   end
 
@@ -1774,7 +1774,7 @@ defmodule WplAiTest do
           TRIGGER "After morning coffee"
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert length(doc.habits) == 1
       [habit] = doc.habits
       assert habit.name == "daily_steps"
@@ -1797,7 +1797,7 @@ defmodule WplAiTest do
           FREQUENCY daily
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert length(doc.habits) == 2
       names = Enum.map(doc.habits, & &1.name)
       assert "hydration" in names
@@ -1822,7 +1822,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert length(doc.habits) == 1
       assert length(doc.phases) == 1
     end
@@ -1845,7 +1845,7 @@ defmodule WplAiTest do
           FREQUENCY weekly
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert length(doc.phases) == 1
       assert length(doc.habits) == 1
       [habit] = doc.habits
@@ -1858,7 +1858,7 @@ defmodule WplAiTest do
       TYPE hybrid
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert doc.habits == nil or doc.habits == []
     end
   end
@@ -1877,7 +1877,7 @@ defmodule WplAiTest do
             replace squat -> push_up
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       assert doc.personalization != nil
     end
   end
@@ -1896,7 +1896,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [phase] = json["plan"]["phases"]
       assert phase["duration"]["unit"] == "weeks"
       assert phase["duration"]["value"] == 1
@@ -1915,7 +1915,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [phase] = json["plan"]["phases"]
       assert phase["duration"]["unit"] == "days"
     end
@@ -1933,7 +1933,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [phase] = json["plan"]["phases"]
       assert phase["duration"]["unit"] == "weeks"
     end
@@ -1951,7 +1951,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [phase] = json["plan"]["phases"]
       assert phase["duration"]["unit"] == "weeks"
     end
@@ -1969,7 +1969,7 @@ defmodule WplAiTest do
                 push_up 3x10 rest 60 second
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [phase] = doc.phases
       [week] = phase.weeks
       [day] = week.days
@@ -1991,7 +1991,7 @@ defmodule WplAiTest do
                 push_up 3x10 rest 2 minute
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [phase] = doc.phases
       [week] = phase.weeks
       [day] = week.days
@@ -2015,7 +2015,7 @@ defmodule WplAiTest do
 
       # Must not blow up — parser is tolerant; rule may have actions: []
       result = WplAi.parse(source)
-      assert match?({:ok, _}, result) or match?({:error, _}, result)
+      assert match?({:ok, _, _}, result) or match?({:error, _}, result)
     end
   end
 
@@ -2030,7 +2030,7 @@ defmodule WplAiTest do
       TYPE workout
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       assert json["plan"]["habits"] == nil
     end
 
@@ -2046,7 +2046,7 @@ defmodule WplAiTest do
           TRIGGER "After breakfast"
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       habits = json["plan"]["habits"]
       assert is_list(habits)
       assert length(habits) == 1
@@ -2075,7 +2075,7 @@ defmodule WplAiTest do
           FREQUENCY daily
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       ids = Enum.map(json["plan"]["habits"], & &1["id"])
       assert ids == ["plan_habit_1", "plan_habit_2", "plan_habit_3"]
     end
@@ -2090,7 +2090,7 @@ defmodule WplAiTest do
           FREQUENCY daily
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [h] = json["plan"]["habits"]
       refute Map.has_key?(h, "description")
     end
@@ -2108,7 +2108,7 @@ defmodule WplAiTest do
             replace squat -> wall_sit
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       rules = json["plan"]["personalization"]["rules"]
       assert length(rules) == 1
       [rule] = rules
@@ -2160,7 +2160,7 @@ defmodule WplAiTest do
                 squat 3x5
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       at = doc.athlete_thresholds
 
       assert at != nil
@@ -2206,7 +2206,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       at = json["plan"]["athlete_thresholds"]
 
       assert at != nil
@@ -2235,7 +2235,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       refute Map.has_key?(json["plan"], "athlete_thresholds")
     end
   end
@@ -2260,7 +2260,7 @@ defmodule WplAiTest do
                   zone 1 model hr_3_zone_seiler
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[cardio]] = get_activities(doc)
 
       assert %AST.Cardio{} = cardio
@@ -2284,7 +2284,7 @@ defmodule WplAiTest do
                   zone 3
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[cardio]] = get_activities(doc)
 
       assert cardio.zone == 3
@@ -2306,7 +2306,7 @@ defmodule WplAiTest do
                   intensity power 250
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[cardio]] = get_activities(doc)
 
       assert cardio.intensity.type == :power
@@ -2330,7 +2330,7 @@ defmodule WplAiTest do
                   zone 1 model hr_3_zone_seiler
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[activity]] = get_json_activities(json)
 
       intensity = activity["prescription"]["intensity"]
@@ -2354,7 +2354,7 @@ defmodule WplAiTest do
                   intensity power 250
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[activity]] = get_json_activities(json)
 
       intensity = activity["prescription"]["intensity"]
@@ -2381,7 +2381,7 @@ defmodule WplAiTest do
                 bench_press 3x8 muscles primary chest secondary triceps, front_delts pattern push_horizontal
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[exercise]] = get_activities(doc)
 
       assert %AST.Exercise{} = exercise
@@ -2404,7 +2404,7 @@ defmodule WplAiTest do
                 push_up 3x10 muscles chest, triceps, front_delts pattern push_horizontal
       """
 
-      assert {:ok, doc} = WplAi.parse(source)
+      assert {:ok, doc, _repairs} = WplAi.parse(source)
       [[exercise]] = get_activities(doc)
 
       assert exercise.primary_muscles == ["chest", "triceps", "front_delts"]
@@ -2427,7 +2427,7 @@ defmodule WplAiTest do
                 squat 4x5 muscles primary quadriceps, glutes secondary hamstrings pattern squat
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[activity]] = get_json_activities(json)
 
       assert activity["primary_muscles"] == ["quadriceps", "glutes"]
@@ -2448,7 +2448,7 @@ defmodule WplAiTest do
                 push_up 3x10
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       [[activity]] = get_json_activities(json)
 
       refute Map.has_key?(activity, "primary_muscles")
@@ -2470,5 +2470,62 @@ defmodule WplAiTest do
         end)
       end)
     end)
+  end
+
+  # ---------------------------------------------------------------------------
+  # TDD: repairs ledger (A1)
+  # ---------------------------------------------------------------------------
+
+  describe "to_wpl/1 — repairs ledger" do
+    test "returns 3-tuple {ok, json, repairs} on success" do
+      source = ~S"""
+      PLAN "Repair Test"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      assert {:ok, _json, repairs} = WplAi.to_wpl(source)
+      assert is_list(repairs)
+    end
+
+    test "repairs list is empty for a plan with no silent normalizations" do
+      source = ~S"""
+      PLAN "Clean Plan"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      {:ok, _json, repairs} = WplAi.to_wpl(source)
+      # A minimal clean plan should have zero repairs
+      assert repairs == []
+    end
+
+    test "unknown ALL-CAPS section (non-safety) records a skipped_section repair" do
+      source = ~S"""
+      PLAN "Plan With Notes"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "Day 1":
+              main straight_sets:
+                push_up 3x10
+      NOTES:
+        Some extra prose.
+      """
+
+      {:ok, _json, repairs} = WplAi.to_wpl(source)
+      assert Enum.any?(repairs, &(&1.type == :skipped_section))
+    end
   end
 end

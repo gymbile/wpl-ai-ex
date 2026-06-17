@@ -76,7 +76,7 @@ defmodule WplAi.DivergenceFixesTest do
 
   describe "metadata.language default" do
     test "minimal plan compiles with metadata.language set to en" do
-      assert {:ok, json} = WplAi.to_wpl(@minimal_plan)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@minimal_plan)
       assert json["plan"]["metadata"]["language"] == "en"
     end
 
@@ -94,7 +94,7 @@ defmodule WplAi.DivergenceFixesTest do
           WEEK 1:
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       assert json["plan"]["metadata"]["language"] == "es"
     end
   end
@@ -105,13 +105,13 @@ defmodule WplAi.DivergenceFixesTest do
 
   describe "exercise activity auto-derived name" do
     test "push_up exercise_ref produces name Push Up" do
-      assert {:ok, json} = WplAi.to_wpl(@exercise_plan)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@exercise_plan)
       activity = first_activity(json)
       assert activity["name"] == "Push Up"
     end
 
     test "auto-derived name is a fallback when no explicit name in DSL" do
-      assert {:ok, json} = WplAi.to_wpl(@exercise_plan)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@exercise_plan)
       activity = first_activity(json)
       # Name comes from exercise_ref "push_up" -> "Push Up"
       assert activity["exercise_ref"] == "push_up"
@@ -121,7 +121,7 @@ defmodule WplAi.DivergenceFixesTest do
 
   describe "cardio activity auto-derived name" do
     test "running modality produces name Running" do
-      assert {:ok, json} = WplAi.to_wpl(@cardio_plan)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@cardio_plan)
       activity = first_activity(json)
       assert activity["type"] == "cardio"
       assert activity["name"] == "Running"
@@ -130,7 +130,7 @@ defmodule WplAi.DivergenceFixesTest do
 
   describe "nutrition activity auto-derived name" do
     test "daily_target category produces name Daily Target" do
-      assert {:ok, json} = WplAi.to_wpl(@nutrition_plan)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@nutrition_plan)
       activity = first_activity(json)
       assert activity["type"] == "nutrition"
       assert activity["name"] == "Daily Target"
@@ -156,7 +156,7 @@ defmodule WplAi.DivergenceFixesTest do
                   intervals 40s on 20s off x8
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       activity = first_activity(json)
       assert activity["type"] == "cardio"
       assert activity["name"] == "HIIT"

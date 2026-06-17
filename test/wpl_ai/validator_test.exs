@@ -13,7 +13,7 @@ defmodule WplAi.ValidatorTest do
   """
 
   defp parse_and_validate!(source) do
-    assert {:ok, doc} = WplAi.Parser.parse(source)
+    assert {:ok, doc, _repairs} = WplAi.Parser.parse(source)
     Validator.validate_semantics(doc)
   end
 

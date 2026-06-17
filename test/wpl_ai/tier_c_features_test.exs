@@ -39,7 +39,7 @@ defmodule WplAi.TierCFeaturesTest do
 
   describe "per-kg macros (Feature 1)" do
     test "emits g_per_kg unit for protein, carbs, fat" do
-      assert {:ok, json} = WplAi.to_wpl(@macros_per_kg_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@macros_per_kg_source)
 
       nutrition_block =
         json["plan"]["phases"]
@@ -60,7 +60,7 @@ defmodule WplAi.TierCFeaturesTest do
     end
 
     test "emits multiplier_of_tdee unit for calories" do
-      assert {:ok, json} = WplAi.to_wpl(@macros_per_kg_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@macros_per_kg_source)
 
       nutrition_block =
         json["plan"]["phases"]
@@ -79,7 +79,7 @@ defmodule WplAi.TierCFeaturesTest do
     end
 
     test "emits kcal_per_kg unit for calories" do
-      assert {:ok, json} = WplAi.to_wpl(@kcal_per_kg_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@kcal_per_kg_source)
 
       nutrition_block =
         json["plan"]["phases"]
@@ -114,7 +114,7 @@ defmodule WplAi.TierCFeaturesTest do
                   calories 2000 .. 2500
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
 
       nutrition_block =
         json["plan"]["phases"]
@@ -168,7 +168,7 @@ defmodule WplAi.TierCFeaturesTest do
 
   describe "Weight.percentage_bodyweight (Feature 2)" do
     test "emits percentage_bodyweight type for `weight N% bw`" do
-      assert {:ok, json} = WplAi.to_wpl(@percentage_bw_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@percentage_bw_source)
 
       main_block =
         json["plan"]["phases"]
@@ -188,7 +188,7 @@ defmodule WplAi.TierCFeaturesTest do
     end
 
     test "emits percentage_bodyweight type for `weight N% bodyweight`" do
-      assert {:ok, json} = WplAi.to_wpl(@percentage_bodyweight_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@percentage_bodyweight_source)
 
       main_block =
         json["plan"]["phases"]
@@ -220,7 +220,7 @@ defmodule WplAi.TierCFeaturesTest do
                 bench_press 3x5 weight 80 kg
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
 
       main_block =
         json["plan"]["phases"]
@@ -253,7 +253,7 @@ defmodule WplAi.TierCFeaturesTest do
                 squat 3x5 weight 85 percentage_1rm
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
 
       main_block =
         json["plan"]["phases"]
