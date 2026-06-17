@@ -52,7 +52,7 @@ defmodule WplAi.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:wpl_validator, "~> 1.6", only: :test}
+      {:wpl_validator, path: "../wpl-validator-ex", only: :test}
     ]
   end
 end
