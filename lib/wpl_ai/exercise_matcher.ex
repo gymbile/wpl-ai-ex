@@ -115,13 +115,16 @@ defmodule WplAi.ExerciseMatcher do
                    @full_body ++
                    @rehab_mobility
 
+  # MapSet for O(1) membership checks — placed after @all_exercises is fully defined.
+  @exercise_set MapSet.new(@all_exercises)
+
   @doc """
   Get all known exercise references.
   """
   def all_exercises, do: @all_exercises
 
   @doc """
-  Check if an exercise reference is known.
+  Check if an exercise reference is known (O(1) MapSet lookup).
 
   ## Examples
 
@@ -132,8 +135,9 @@ defmodule WplAi.ExerciseMatcher do
       false
 
   """
+  @spec known?(String.t()) :: boolean()
   def known?(exercise_ref) when is_binary(exercise_ref) do
-    exercise_ref in @all_exercises
+    MapSet.member?(@exercise_set, exercise_ref)
   end
 
   @doc """

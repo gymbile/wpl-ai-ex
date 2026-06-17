@@ -163,4 +163,57 @@ defmodule WplAi.ValidatorTest do
       assert String.contains?(hd(metric_warnings).message, "totally_made_up")
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Unknown exercise refs
+  # ---------------------------------------------------------------------------
+
+  describe "validate_semantics/1 - unknown exercise refs" do
+    test "emits a warning for an exercise_ref absent from the catalog" do
+      source = ~S"""
+      PLAN "Unknown Ex Plan"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "D1":
+              main straight_sets:
+                totally_unknown_exercise_xyz 3x10
+      """
+
+      {:ok, doc, _repairs} = WplAi.parse(source)
+      warnings = WplAi.validate_semantics(doc)
+
+      unknown_warnings =
+        Enum.filter(warnings, fn w ->
+          String.contains?(w.message, "totally_unknown_exercise_xyz")
+        end)
+
+      assert length(unknown_warnings) >= 1
+      assert hd(unknown_warnings).severity == :warning
+    end
+
+    test "does not emit a warning for a known exercise ref" do
+      source = ~S"""
+      PLAN "Known Ex Plan"
+      TYPE workout
+      PHASES
+        PHASE "P1" (1 weeks):
+          WEEK 1:
+            DAY Monday training 30m "D1":
+              main straight_sets:
+                push_up 3x10
+      """
+
+      {:ok, doc, _repairs} = WplAi.parse(source)
+      warnings = WplAi.validate_semantics(doc)
+
+      unknown_warnings =
+        Enum.filter(warnings, fn w ->
+          String.contains?(w.message, "push_up") and w.severity == :warning
+        end)
+
+      assert unknown_warnings == []
+    end
+  end
 end
