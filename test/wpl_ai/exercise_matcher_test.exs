@@ -180,6 +180,14 @@ defmodule WplAi.ExerciseMatcherTest do
       assert Map.has_key?(categories, :cardio_warmup)
       assert Map.has_key?(categories, :stretching)
       assert Map.has_key?(categories, :full_body)
+      assert Map.has_key?(categories, :rehab_mobility)
+    end
+
+    test "rehab_mobility category is non-empty and contains scapular_retraction" do
+      categories = ExerciseMatcher.exercises_by_category()
+      rehab = Map.fetch!(categories, :rehab_mobility)
+      assert length(rehab) > 0
+      assert "scapular_retraction" in rehab
     end
 
     test "each category list is non-empty" do
