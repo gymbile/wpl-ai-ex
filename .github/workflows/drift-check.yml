@@ -1,0 +1,45 @@
+name: Exercise catalog drift check
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  vendored-matches-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve latest gymbile/wpl tag
+        id: tag
+        run: |
+          latest=$(git ls-remote --tags https://github.com/gymbile/wpl.git \
+                  | grep 'refs/tags/v' | grep -v '\^{}' \
+                  | sort -V | tail -1 | awk '{print $2}' | sed 's|refs/tags/||')
+          echo "latest=$latest" >> $GITHUB_OUTPUT
+      - name: Diff vendored exercises.json against upstream
+        run: |
+          curl -sSL "https://raw.githubusercontent.com/gymbile/wpl/${{ steps.tag.outputs.latest }}/data/exercises.json" -o /tmp/upstream-exercises.json
+          if ! diff -q priv/data/exercises.json /tmp/upstream-exercises.json > /dev/null; then
+            echo "::error::Vendored exercises.json drifted from gymbile/wpl@${{ steps.tag.outputs.latest }}."
+            exit 1
+          fi
+
+  codegen-no-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.17'
+          otp-version: '26'
+      - run: mix deps.get
+      - run: MIX_ENV=test mix run scripts/gen_exercises.exs
+      - name: Fail if generated catalog drifted
+        run: |
+          if ! git diff --quiet -- lib/wpl_ai/exercises_data.ex; then
+            echo "::error::lib/wpl_ai/exercises_data.ex is out of date — regenerate and commit."
+            git --no-pager diff -- lib/wpl_ai/exercises_data.ex
+            exit 1
+          fi
