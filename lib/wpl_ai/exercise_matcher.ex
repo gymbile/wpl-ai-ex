@@ -27,9 +27,6 @@ defmodule WplAi.ExerciseMatcher do
   # MapSet for O(1) membership checks — placed after @all_exercises is fully defined.
   @exercise_set MapSet.new(@all_exercises)
 
-  # MapSet for O(1) membership checks — placed after @all_exercises is fully defined.
-  @exercise_set MapSet.new(@all_exercises)
-
   @doc """
   Get all known exercise references.
   """
