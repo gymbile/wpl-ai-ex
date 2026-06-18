@@ -11,18 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve latest gymbile/wpl tag
-        id: tag
+      - name: Read vendored version
+        id: vendored
+        run: echo "version=$(cat priv/data/exercises-version.txt)" >> $GITHUB_OUTPUT
+      - name: Diff vendored exercises.json against the upstream release it pins
         run: |
-          latest=$(git ls-remote --tags https://github.com/gymbile/wpl.git \
-                  | grep 'refs/tags/v' | grep -v '\^{}' \
-                  | sed 's|.*refs/tags/||' | sort -V | tail -1)
-          echo "latest=$latest" >> $GITHUB_OUTPUT
-      - name: Diff vendored exercises.json against upstream
-        run: |
-          curl -sSL "https://raw.githubusercontent.com/gymbile/wpl/${{ steps.tag.outputs.latest }}/data/exercises.json" -o /tmp/upstream-exercises.json
+          tag="v${{ steps.vendored.outputs.version }}"
+          curl -sSL "https://raw.githubusercontent.com/gymbile/wpl/${tag}/data/exercises.json" -o /tmp/upstream-exercises.json
           if ! diff -q priv/data/exercises.json /tmp/upstream-exercises.json > /dev/null; then
-            echo "::error::Vendored exercises.json drifted from gymbile/wpl@${{ steps.tag.outputs.latest }}."
+            echo "::error::Vendored exercises.json drifted from gymbile/wpl@${tag} (vendored data version: ${{ steps.vendored.outputs.version }}). The vendored copy no longer matches the release it claims to track."
             exit 1
           fi
 
@@ -35,7 +32,9 @@ jobs:
           elixir-version: '1.17'
           otp-version: '26'
       - run: mix deps.get
-      - run: MIX_ENV=test mix run scripts/gen_exercises.exs
+      # --no-start: the generator is pure file I/O (read JSON, write .ex) and must
+      # not boot the OTP app.
+      - run: MIX_ENV=test mix run --no-start scripts/gen_exercises.exs
       - name: Fail if generated catalog drifted
         run: |
           if ! git diff --quiet -- lib/wpl_ai/exercises_data.ex; then
