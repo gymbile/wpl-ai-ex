@@ -1,7 +1,7 @@
 defmodule WplAi.MixProject do
   use Mix.Project
 
-  @version "2.0.0"
+  @version "2.1.0"
   @source_url "https://github.com/gymbile/wpl-ai-ex"
 
   def project do

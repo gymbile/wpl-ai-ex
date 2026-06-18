@@ -7,6 +7,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-06-18
+
+### Added
+
+- **Canonical exercise catalog SSOT**: `WplAi.ExercisesData` is generated from a vendored
+  `wpl/data/exercises.json`; `ExerciseMatcher` sources its catalog from it; adds drift-check.
+  Public API unchanged.
+
 ## [2.0.0] — 2026-06-17
 
 ### BREAKING
