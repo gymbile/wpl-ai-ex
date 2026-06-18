@@ -19,101 +19,13 @@ defmodule WplAi.ExerciseMatcher do
 
   """
 
-  # Exercise library - canonical exercise references
-  # Organized by category for maintainability
-  @upper_body ~w(
-    push_up pull_up chin_up dip
-    bench_press incline_press decline_press dumbbell_press
-    shoulder_press overhead_press military_press arnold_press
-    dumbbell_row barbell_row bent_over_row cable_row seated_row
-    inverted_row
-    lat_pulldown cable_pulldown
-    bicep_curl hammer_curl concentration_curl preacher_curl
-    tricep_dip tricep_extension tricep_pushdown skull_crusher
-    face_pull rear_delt_fly lateral_raise front_raise
-    dumbbell_fly cable_fly chest_fly pec_deck
-    shrug upright_row
-    hangboard
-  )
+  # Exercise catalog — sourced from the generated data module.
+  # To update the catalog, edit priv/data/exercises.json and re-run:
+  #   MIX_ENV=test mix run scripts/gen_exercises.exs
+  @all_exercises WplAi.ExercisesData.all()
 
-  @lower_body ~w(
-    squat front_squat goblet_squat sumo_squat split_squat
-    lunge walking_lunge reverse_lunge lateral_lunge
-    deadlift romanian_deadlift sumo_deadlift trap_bar_deadlift
-    leg_press hack_squat
-    leg_curl leg_extension
-    calf_raise seated_calf_raise standing_calf_raise
-    glute_bridge hip_thrust
-    step_up box_jump jump_squat
-    hip_abduction hip_adduction
-    good_morning
-  )
-
-  @core ~w(
-    plank side_plank plank_up
-    crunch bicycle_crunch reverse_crunch
-    sit_up v_up
-    russian_twist wood_chop
-    leg_raise hanging_leg_raise lying_leg_raise
-    mountain_climber
-    dead_bug bird_dog
-    ab_wheel ab_rollout
-    hollow_hold hollow_rock
-    toe_touch
-    pallof_press
-    superman back_extension
-  )
-
-  @cardio_warmup ~w(
-    jumping_jack jump_rope high_knees butt_kicks
-    burpee squat_jump tuck_jump
-    arm_circles leg_swings hip_circles ankle_circles
-    jog_in_place marching
-    jumping_lunge box_step
-    skater jump
-    bear_crawl crab_walk
-    inchworm
-  )
-
-  @stretching ~w(
-    hamstring_stretch quad_stretch hip_flexor_stretch
-    calf_stretch achilles_stretch
-    chest_stretch shoulder_stretch tricep_stretch
-    lat_stretch back_stretch spinal_twist
-    neck_stretch neck_roll
-    butterfly_stretch frog_stretch pigeon_pose
-    child_pose cat_cow
-    forward_fold standing_forward_fold
-    figure_four_stretch
-    wrist_circles ankle_rolls
-  )
-
-  @full_body ~w(
-    turkish_getup clean clean_and_press
-    snatch kettlebell_swing
-    thrusters wall_ball
-    farmers_walk suitcase_carry
-    battle_ropes rowing
-  )
-
-  # Rehab / mobility / breathing exercises. These appear frequently in
-  # programmes for post-injury, postpartum, and rotator-cuff-impingement
-  # clients. Sourced from the wpl-eval v0.2.0 unknown_exercise_ref tail
-  # — every entry here was observed as a real (non-typo) emission by at
-  # least one model during the eval sweep.
-  @rehab_mobility ~w(
-    scapular_retraction external_rotation internal_rotation
-    prone_T prone_Y prone_W
-    pelvic_tilt diaphragmatic_breathing
-  )
-
-  @all_exercises @upper_body ++
-                   @lower_body ++
-                   @core ++
-                   @cardio_warmup ++
-                   @stretching ++
-                   @full_body ++
-                   @rehab_mobility
+  # MapSet for O(1) membership checks — placed after @all_exercises is fully defined.
+  @exercise_set MapSet.new(@all_exercises)
 
   # MapSet for O(1) membership checks — placed after @all_exercises is fully defined.
   @exercise_set MapSet.new(@all_exercises)
@@ -228,15 +140,7 @@ defmodule WplAi.ExerciseMatcher do
   Get exercises by category.
   """
   def exercises_by_category do
-    %{
-      upper_body: @upper_body,
-      lower_body: @lower_body,
-      core: @core,
-      cardio_warmup: @cardio_warmup,
-      stretching: @stretching,
-      full_body: @full_body,
-      rehab_mobility: @rehab_mobility
-    }
+    WplAi.ExercisesData.by_category()
   end
 
   # Normalize for comparison - remove underscores, lowercase

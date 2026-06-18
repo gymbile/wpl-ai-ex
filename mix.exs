@@ -37,7 +37,7 @@ defmodule WplAi.MixProject do
         "Schema" => "https://github.com/gymbile/wpl",
         "Spec" => "https://wpl.dev"
       },
-      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE)
+      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
