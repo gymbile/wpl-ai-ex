@@ -1,7 +1,7 @@
 defmodule WplAi.MixProject do
   use Mix.Project
 
-  @version "1.13.0"
+  @version "2.1.0"
   @source_url "https://github.com/gymbile/wpl-ai-ex"
 
   def project do
@@ -37,7 +37,7 @@ defmodule WplAi.MixProject do
         "Schema" => "https://github.com/gymbile/wpl",
         "Spec" => "https://wpl.dev"
       },
-      files: ~w(lib mix.exs README.md CHANGELOG.md LICENSE)
+      files: ~w(lib priv mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 
@@ -52,7 +52,7 @@ defmodule WplAi.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
-      {:wpl_validator, "~> 1.6", only: :test}
+      {:wpl_validator, "~> 1.9", only: :test}
     ]
   end
 end

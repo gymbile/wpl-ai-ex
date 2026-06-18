@@ -35,21 +35,21 @@ defmodule WplAi.TierDFeaturesTest do
 
   describe "Phase.type enum (Feature 1)" do
     test "emits phase.type when DSL specifies a periodization role" do
-      assert {:ok, json} = WplAi.to_wpl(@phase_type_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@phase_type_source)
 
       phases = json["plan"]["phases"]
       assert phases |> Enum.at(0) |> Map.get("type") == "intensification"
     end
 
     test "emits phase.type deload for deload phase" do
-      assert {:ok, json} = WplAi.to_wpl(@phase_type_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@phase_type_source)
 
       phases = json["plan"]["phases"]
       assert phases |> Enum.at(1) |> Map.get("type") == "deload"
     end
 
     test "omits phase.type when not specified in DSL" do
-      assert {:ok, json} = WplAi.to_wpl(@phase_type_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@phase_type_source)
 
       phases = json["plan"]["phases"]
       refute Map.has_key?(Enum.at(phases, 2), "type")
@@ -68,7 +68,7 @@ defmodule WplAi.TierDFeaturesTest do
               DAY Monday rest "D":
         """
 
-        assert {:ok, json} = WplAi.to_wpl(source)
+        assert {:ok, json, _repairs} = WplAi.to_wpl(source)
         phases = json["plan"]["phases"]
         assert hd(phases)["type"] == phase_type, "expected type #{phase_type}"
       end
@@ -97,7 +97,7 @@ defmodule WplAi.TierDFeaturesTest do
 
   describe "Week.is_deload (Feature 2)" do
     test "emits is_deload true when deload token present" do
-      assert {:ok, json} = WplAi.to_wpl(@week_deload_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@week_deload_source)
 
       weeks =
         json["plan"]["phases"]
@@ -108,7 +108,7 @@ defmodule WplAi.TierDFeaturesTest do
     end
 
     test "omits is_deload when deload token absent" do
-      assert {:ok, json} = WplAi.to_wpl(@week_deload_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@week_deload_source)
 
       weeks =
         json["plan"]["phases"]
@@ -129,7 +129,7 @@ defmodule WplAi.TierDFeaturesTest do
             DAY Monday rest "D":
       """
 
-      assert {:ok, json} = WplAi.to_wpl(source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(source)
       week = json["plan"]["phases"] |> hd() |> Map.get("weeks") |> hd()
       assert week["is_deload"] == true
     end
@@ -157,7 +157,7 @@ defmodule WplAi.TierDFeaturesTest do
 
   describe "SubPlanActivity (Feature 3)" do
     test "emits sub_plan activity with sub_plan_ref and name in warmup" do
-      assert {:ok, json} = WplAi.to_wpl(@sub_plan_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@sub_plan_source)
 
       warmup_block =
         json["plan"]["phases"]
@@ -177,7 +177,7 @@ defmodule WplAi.TierDFeaturesTest do
     end
 
     test "emits sub_plan activity without name when omitted in cooldown" do
-      assert {:ok, json} = WplAi.to_wpl(@sub_plan_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@sub_plan_source)
 
       cooldown_block =
         json["plan"]["phases"]
@@ -196,7 +196,7 @@ defmodule WplAi.TierDFeaturesTest do
     end
 
     test "sub_plan id follows sub_plan_N pattern" do
-      assert {:ok, json} = WplAi.to_wpl(@sub_plan_source)
+      assert {:ok, json, _repairs} = WplAi.to_wpl(@sub_plan_source)
 
       warmup_block =
         json["plan"]["phases"]

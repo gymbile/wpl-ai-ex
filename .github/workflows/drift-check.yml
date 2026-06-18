@@ -1,0 +1,44 @@
+name: Exercise catalog drift check
+
+on:
+  schedule:
+    - cron: '0 14 * * 1'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  vendored-matches-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read vendored version
+        id: vendored
+        run: echo "version=$(cat priv/data/exercises-version.txt)" >> $GITHUB_OUTPUT
+      - name: Diff vendored exercises.json against the upstream release it pins
+        run: |
+          tag="v${{ steps.vendored.outputs.version }}"
+          curl -sSL "https://raw.githubusercontent.com/gymbile/wpl/${tag}/data/exercises.json" -o /tmp/upstream-exercises.json
+          if ! diff -q priv/data/exercises.json /tmp/upstream-exercises.json > /dev/null; then
+            echo "::error::Vendored exercises.json drifted from gymbile/wpl@${tag} (vendored data version: ${{ steps.vendored.outputs.version }}). The vendored copy no longer matches the release it claims to track."
+            exit 1
+          fi
+
+  codegen-no-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.17'
+          otp-version: '26'
+      - run: mix deps.get
+      # --no-start: the generator is pure file I/O (read JSON, write .ex) and must
+      # not boot the OTP app.
+      - run: MIX_ENV=test mix run --no-start scripts/gen_exercises.exs
+      - name: Fail if generated catalog drifted
+        run: |
+          if ! git diff --quiet -- lib/wpl_ai/exercises_data.ex; then
+            echo "::error::lib/wpl_ai/exercises_data.ex is out of date — regenerate and commit."
+            git --no-pager diff -- lib/wpl_ai/exercises_data.ex
+            exit 1
+          fi

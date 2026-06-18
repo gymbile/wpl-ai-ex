@@ -7,6 +7,63 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-06-18
+
+### Added
+
+- **Canonical exercise catalog SSOT**: `WplAi.ExercisesData` is generated from a vendored
+  `wpl/data/exercises.json`; `ExerciseMatcher` sources its catalog from it; adds drift-check.
+  Public API unchanged.
+
+## [2.0.0] — 2026-06-17
+
+### BREAKING
+
+- **`WplAi.to_wpl/1` now returns a 3-tuple `{:ok, json, repairs}`**. Callers
+  matching `{:ok, json} = WplAi.to_wpl(src)` will receive a `MatchError`. Update
+  call sites to `{:ok, json, _repairs} = WplAi.to_wpl(src)` or use the new
+  `WplAi.to_wpl!/1` bang form which strips the repairs.
+- **Unknown safety-adjacent ALL-CAPS sections are now hard parse errors.**
+  Sections whose name matches `REQUIRE*`, `CONTRA*`, `SAFETY*`, `PRECAUTION*`,
+  `MEDICAL*`, or `CLEARANCE*` are rejected with a `ParseError` rather than
+  silently skipped. Previously a typo like `REQUIREMENTS:` (instead of `REQUIRES:`)
+  erased all contraindications with no trace.
+- **Unknown contraindication `severity` or `action` values are now hard parse
+  errors.** Previously an unknown severity was dropped to nil and an unknown action
+  defaulted to `:exclude`; both silent-tolerance paths are removed. Valid severity
+  values: `low`, `moderate`, `high`. Valid action values: `exclude`, `warn`,
+  `require_clearance`.
+
+### Added
+
+- **`repairs` ledger on success path** — `WplAi.to_wpl/1` and
+  `WplAi.Parser.parse/1` both return a `repairs: [repair()]` list alongside the
+  compiled JSON. Every tolerant normalisation (skipped unknown sections, fuzzy
+  exercise substitutions, unknown-exercise-kept, lenient-default fabrications,
+  discarded modifiers) is recorded as a repair map with a `:type` atom. Callers
+  that do not need repairs can ignore the third element.
+- **Unknown-exercise semantic warning** — `WplAi.Validator.validate_semantics/1`
+  emits a `:warning` for exercise refs absent from the canonical `ALL_EXERCISES`
+  catalog. This is a warning, not a hard error; compilation still succeeds.
+- **End-to-end safety-invariant test** — compiles a plan via `WplAi.to_wpl/1`
+  then asserts that a contraindicated exercise (including the plural variant
+  `push_ups`) cannot survive a call to `WPL.Enforce.enforce/4`. Ensures the
+  compiler → validator → enforce pipeline preserves the safety contract end to end.
+- **Test-only dep on `wpl_validator`** — added as a local path dep
+  `{:wpl_validator, path: "../wpl-validator-ex", only: :test}` for development
+  work on this branch.
+
+### Notes
+
+- `WplAi.parse!/1`, `WplAi.to_wpl!/1`, `WplAi.validate/1`, and
+  `WplAi.round_trip/1` are updated internally to handle the new 3-tuple return
+  without exposing repairs to callers who do not need them.
+- **Before `mix hex.publish`**: the `:wpl_validator` dep in `mix.exs` is currently
+  a **local PATH dep** (`path: "../wpl-validator-ex"`). This MUST be changed back
+  to the Hex version `{:wpl_validator, "~> 1.8", only: :test}` before publishing.
+  The CI publish pipeline (`publish.yml`) cannot resolve a path dep and will fail
+  if left as-is. `wpl_validator 1.8.0` must be published to Hex first.
+
 ## [1.13.0] — 2026-05-13
 
 ### Added — vocabulary expansion (TS parity with @gymbile/wpl-ai@1.13.0)

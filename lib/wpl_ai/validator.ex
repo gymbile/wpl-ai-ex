@@ -9,7 +9,7 @@ defmodule WplAi.Validator do
   Mirrors the TypeScript `validateSemantics` function in `wpl-ai/src/validator.ts`.
   """
 
-  alias WplAi.AST
+  alias WplAi.{AST, ExerciseMatcher}
 
   @type warning :: %{
           severity: :warning | :info,
@@ -69,8 +69,60 @@ defmodule WplAi.Validator do
   @spec validate_semantics(AST.Document.t()) :: [warning()]
   def validate_semantics(%AST.Document{} = doc) do
     []
+    |> validate_phases(doc.phases || [])
     |> validate_progress(doc.progress)
+    |> Enum.reverse()
   end
+
+  # ---------------------------------------------------------------------------
+  # Phase / week / day / block / activity walker — exercise catalog check
+  # ---------------------------------------------------------------------------
+
+  defp validate_phases(warnings, phases) when is_list(phases) do
+    Enum.reduce(phases, warnings, fn phase, acc ->
+      validate_weeks(acc, phase.weeks || [])
+    end)
+  end
+
+  defp validate_weeks(warnings, weeks) do
+    Enum.reduce(weeks, warnings, fn week, acc ->
+      validate_days(acc, week.days || [])
+    end)
+  end
+
+  defp validate_days(warnings, days) do
+    Enum.reduce(days, warnings, fn day, acc ->
+      validate_blocks(acc, day.blocks || [])
+    end)
+  end
+
+  defp validate_blocks(warnings, blocks) do
+    Enum.reduce(blocks, warnings, fn block, acc ->
+      validate_activities(acc, block.activities || [])
+    end)
+  end
+
+  defp validate_activities(warnings, activities) do
+    Enum.reduce(activities, warnings, fn activity, acc ->
+      validate_activity(acc, activity)
+    end)
+  end
+
+  defp validate_activity(warnings, %AST.Exercise{exercise_ref: ref}) when is_binary(ref) do
+    if ExerciseMatcher.known?(ref) do
+      warnings
+    else
+      warning = %{
+        severity: :warning,
+        message:
+          "'#{ref}' is not a known exercise in the catalog — it cannot be checked against contraindications by name; verify it is intentional"
+      }
+
+      [warning | warnings]
+    end
+  end
+
+  defp validate_activity(warnings, _activity), do: warnings
 
   # ---------------------------------------------------------------------------
   # Progress section — checkpoints and measurement metrics

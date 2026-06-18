@@ -15,7 +15,7 @@ defmodule WplAi.VocabulariesTest do
   """
 
   defp parse!(source) do
-    assert {:ok, doc} = Parser.parse(source)
+    assert {:ok, doc, _repairs} = Parser.parse(source)
     doc
   end
 

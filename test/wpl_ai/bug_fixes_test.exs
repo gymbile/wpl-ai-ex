@@ -11,7 +11,7 @@ defmodule WplAi.BugFixesTest do
   # ---------------------------------------------------------------------------
 
   defp compile_plan(source) do
-    {:ok, result} = WplAi.to_wpl(source)
+    {:ok, result, _repairs} = WplAi.to_wpl(source)
     result
   end
 

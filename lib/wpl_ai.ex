@@ -40,7 +40,7 @@ defmodule WplAi do
       ...>         main straight_sets:
       ...>           push_up 3x8..12 target 10 rpe 7
       ...> \"""
-      iex> {:ok, ast} = WplAi.parse(source)
+      iex> {:ok, ast, _repairs} = WplAi.parse(source)
       iex> ast.header.name
       "Upper Body Beginner"
 
@@ -51,15 +51,15 @@ defmodule WplAi do
   @doc """
   Parse WPL-AI source text into an AST.
 
-  Returns `{:ok, AST.Document.t()}` on success, or `{:error, errors}` on failure.
+  Returns `{:ok, AST.Document.t(), repairs}` on success, or `{:error, errors}` on failure.
 
   ## Examples
 
       iex> WplAi.parse("PLAN \\"Test\\"\\nTYPE workout")
-      {:ok, %WplAi.AST.Document{header: %WplAi.AST.Header{name: "Test", type: :workout}}}
+      {:ok, %WplAi.AST.Document{header: %WplAi.AST.Header{name: "Test", type: :workout}}, []}
 
   """
-  @spec parse(String.t()) :: {:ok, AST.Document.t()} | {:error, list()}
+  @spec parse(String.t()) :: {:ok, AST.Document.t(), [Parser.repair()]} | {:error, list()}
   def parse(source) when is_binary(source) do
     Parser.parse(source)
   end
@@ -76,7 +76,7 @@ defmodule WplAi do
   @spec parse!(String.t()) :: AST.Document.t()
   def parse!(source) when is_binary(source) do
     case parse(source) do
-      {:ok, document} -> document
+      {:ok, document, _repairs} -> document
       {:error, errors} -> raise "WPL-AI parse error: #{Errors.format_errors(errors, source)}"
     end
   end
@@ -88,7 +88,7 @@ defmodule WplAi do
 
   ## Examples
 
-      iex> {:ok, ast} = WplAi.parse("PLAN \\"Test\\"\\nTYPE workout")
+      iex> {:ok, ast, _repairs} = WplAi.parse("PLAN \\"Test\\"\\nTYPE workout")
       iex> {:ok, json} = WplAi.compile(ast)
       iex> json["plan"]["name"]
       "Test"
@@ -110,20 +110,21 @@ defmodule WplAi do
   @doc """
   Parse and compile WPL-AI source text to WPL JSON in one step.
 
-  Returns `{:ok, json_map}` on success, or `{:error, errors}` on failure.
+  Returns `{:ok, json_map, repairs}` on success, or `{:error, errors}` on failure.
+  `repairs` is a list of maps describing silent normalizations that were applied.
 
   ## Examples
 
-      iex> {:ok, json} = WplAi.to_wpl("PLAN \\"Test\\"\\nTYPE workout")
+      iex> {:ok, json, _repairs} = WplAi.to_wpl("PLAN \\"Test\\"\\nTYPE workout")
       iex> json["plan"]["name"]
       "Test"
 
   """
-  @spec to_wpl(String.t()) :: {:ok, map()} | {:error, list()}
+  @spec to_wpl(String.t()) :: {:ok, map(), [Parser.repair()]} | {:error, list()}
   def to_wpl(source) when is_binary(source) do
-    with {:ok, doc} <- parse(source),
+    with {:ok, doc, repairs} <- parse(source),
          {:ok, json} <- compile(doc) do
-      {:ok, json}
+      {:ok, json, repairs}
     end
   end
 
@@ -132,9 +133,10 @@ defmodule WplAi do
   """
   @spec to_wpl!(String.t()) :: map()
   def to_wpl!(source) when is_binary(source) do
-    source
-    |> parse!()
-    |> compile!()
+    case to_wpl(source) do
+      {:ok, json, _repairs} -> json
+      {:error, errors} -> raise "WPL-AI parse error: #{Errors.format_errors(errors, source)}"
+    end
   end
 
   @doc """
@@ -177,7 +179,7 @@ defmodule WplAi do
   """
   @spec round_trip(String.t()) :: {:ok, String.t()} | {:error, term()}
   def round_trip(source) when is_binary(source) do
-    with {:ok, json} <- to_wpl(source),
+    with {:ok, json, _repairs} <- to_wpl(source),
          {:ok, text} <- decompile(json) do
       {:ok, text}
     end
@@ -219,7 +221,7 @@ defmodule WplAi do
   @spec validate(String.t()) :: :ok | {:error, list()}
   def validate(source) when is_binary(source) do
     case parse(source) do
-      {:ok, _} -> :ok
+      {:ok, _doc, _repairs} -> :ok
       {:error, errors} -> {:error, errors}
     end
   end
@@ -233,7 +235,7 @@ defmodule WplAi do
 
   ## Examples
 
-      iex> {:ok, doc} = WplAi.parse(source)
+      iex> {:ok, doc, _repairs} = WplAi.parse(source)
       iex> warnings = WplAi.validate_semantics(doc)
       iex> Enum.filter(warnings, &String.contains?(&1.message, "measurement metric"))
       []
@@ -276,7 +278,7 @@ defmodule WplAi do
 
   ## Examples
 
-      iex> {:ok, doc} = WplAi.parse(source)
+      iex> {:ok, doc, _repairs} = WplAi.parse(source)
       iex> WplAi.exercise_refs(doc)
       ["push_up", "squat", "plank"]
 
@@ -308,7 +310,7 @@ defmodule WplAi do
 
   ## Examples
 
-      iex> {:ok, doc} = WplAi.parse(source)
+      iex> {:ok, doc, _repairs} = WplAi.parse(source)
       iex> WplAi.activity_types(doc)
       [:exercise, :cardio, :meditation]
 
@@ -363,7 +365,7 @@ defmodule WplAi do
 
   ## Examples
 
-      iex> {:ok, doc} = WplAi.parse(source)
+      iex> {:ok, doc, _repairs} = WplAi.parse(source)
       iex> WplAi.activity_counts(doc)
       %{exercise: 15, cardio: 3, meditation: 2}
 
