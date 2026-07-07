@@ -48,6 +48,10 @@ defmodule WplAi.Validator do
   @questionnaire_values ~w(phq9 gad7 ipaq_short ipaq_long psqi pss10 borg_cr10 rpe_session)
   @questionnaire_set MapSet.new(@questionnaire_values)
 
+  # Goal category vocabulary (WPL 1.9.0, 10 values)
+  @goal_categories ~w(weight_loss muscle_gain endurance strength flexibility mental_wellness nutrition habit general_fitness custom)
+  @goal_category_set MapSet.new(@goal_categories)
+
   # ---------------------------------------------------------------------------
   # Public API
   # ---------------------------------------------------------------------------
@@ -69,9 +73,20 @@ defmodule WplAi.Validator do
   @spec validate_semantics(AST.Document.t()) :: [warning()]
   def validate_semantics(%AST.Document{} = doc) do
     []
+    |> validate_goals(doc.goals || [])
     |> validate_phases(doc.phases || [])
     |> validate_progress(doc.progress)
     |> Enum.reverse()
+  end
+
+  # ---------------------------------------------------------------------------
+  # Goals — category vocabulary check
+  # ---------------------------------------------------------------------------
+
+  defp validate_goals(warnings, goals) when is_list(goals) do
+    Enum.reduce(goals, warnings, fn %AST.Goal{category: category}, acc ->
+      acc ++ check_vocabulary(category, "goal category", @goal_category_set, @goal_categories)
+    end)
   end
 
   # ---------------------------------------------------------------------------

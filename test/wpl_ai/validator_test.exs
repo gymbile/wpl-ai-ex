@@ -165,6 +165,50 @@ defmodule WplAi.ValidatorTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Goal category vocabulary
+  # ---------------------------------------------------------------------------
+
+  describe "validate_semantics/1 - goal category vocabulary" do
+    test "no warning for canonical category weight_loss" do
+      source =
+        @minimal_header <> "\nGOALS\n  GOAL primary weight_loss:\n    name \"Lose weight\"\n"
+
+      warnings = parse_and_validate!(source)
+      goal_warnings = Enum.filter(warnings, &String.contains?(&1.message, "goal category"))
+      assert goal_warnings == []
+    end
+
+    test "no warning for general_fitness (new in WPL 1.9.0)" do
+      source =
+        @minimal_header <> "\nGOALS\n  GOAL primary general_fitness:\n    name \"Get fit\"\n"
+
+      warnings = parse_and_validate!(source)
+      goal_warnings = Enum.filter(warnings, &String.contains?(&1.message, "goal category"))
+      assert goal_warnings == []
+    end
+
+    test "no warning for custom" do
+      source = @minimal_header <> "\nGOALS\n  GOAL primary custom:\n    name \"My goal\"\n"
+      warnings = parse_and_validate!(source)
+      goal_warnings = Enum.filter(warnings, &String.contains?(&1.message, "goal category"))
+      assert goal_warnings == []
+    end
+
+    test "warns for unknown goal category" do
+      source = @minimal_header <> "\nGOALS\n  GOAL primary made_up_thing:\n    name \"Bad\"\n"
+      warnings = parse_and_validate!(source)
+      goal_warnings = Enum.filter(warnings, &String.contains?(&1.message, "goal category"))
+      assert length(goal_warnings) == 1
+      assert String.contains?(hd(goal_warnings).message, "made_up_thing")
+    end
+
+    test "plan with unknown goal category is still valid (warning, not error)" do
+      source = @minimal_header <> "\nGOALS\n  GOAL primary made_up_thing:\n    name \"Bad\"\n"
+      assert {:ok, _doc, _repairs} = WplAi.Parser.parse(source)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Unknown exercise refs
   # ---------------------------------------------------------------------------
 

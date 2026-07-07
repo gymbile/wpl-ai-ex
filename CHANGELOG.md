@@ -7,6 +7,17 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-07-07
+
+### Added
+
+- **Goal-category soft-validation**: `Validator.validate_semantics/1` now checks each
+  `GOAL` category against the canonical WPL 1.9.0 vocabulary
+  (`weight_loss`, `muscle_gain`, `endurance`, `strength`, `flexibility`,
+  `mental_wellness`, `nutrition`, `habit`, `general_fitness`, `custom`).
+  Unknown categories emit a `:warning` with fuzzy "Did you mean" suggestions.
+  Parity with the TypeScript `wpl-ai` lib. Plans with unknown categories still compile.
+
 ## [2.1.0] — 2026-06-18
 
 ### Added
