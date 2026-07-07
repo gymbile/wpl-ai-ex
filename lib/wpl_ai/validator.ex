@@ -49,7 +49,7 @@ defmodule WplAi.Validator do
   @questionnaire_set MapSet.new(@questionnaire_values)
 
   # Goal category vocabulary (WPL 1.9.0, 10 values)
-  @goal_categories ~w(weight_loss muscle_gain endurance strength flexibility mental_wellness nutrition habit general_fitness custom)
+  @goal_categories ~w(weight_loss muscle_gain endurance strength flexibility mental_wellness nutrition habit recovery general_fitness custom)
   @goal_category_set MapSet.new(@goal_categories)
 
   # ---------------------------------------------------------------------------

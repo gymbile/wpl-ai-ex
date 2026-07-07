@@ -7,6 +7,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-07-07
+
+### Added
+- `recovery` recognized as a goal category (WPL 1.9.1) — no longer warns.
+
 ## [2.1.1] — 2026-07-07
 
 ### Added
