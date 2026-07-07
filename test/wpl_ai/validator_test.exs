@@ -170,7 +170,9 @@ defmodule WplAi.ValidatorTest do
 
   describe "validate_semantics/1 - goal category vocabulary" do
     test "no warning for canonical category weight_loss" do
-      source = @minimal_header <> "\nGOALS\n  GOAL primary weight_loss:\n    name \"Lose weight\"\n"
+      source =
+        @minimal_header <> "\nGOALS\n  GOAL primary weight_loss:\n    name \"Lose weight\"\n"
+
       warnings = parse_and_validate!(source)
       goal_warnings = Enum.filter(warnings, &String.contains?(&1.message, "goal category"))
       assert goal_warnings == []
