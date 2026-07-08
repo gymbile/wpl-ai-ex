@@ -2814,18 +2814,95 @@ defmodule WplAi.Parser do
         end
 
       _ ->
-        # Simple activity without parameters
-        # Check for inline duration like "2m"
-        {duration, state} = parse_optional_inline_duration(state)
+        # Inline named cardio: `<modality> continuous:` (or intervals/fartlek)
+        # introducing an indented `total ... / zone ...` body. Subagents emit
+        # this shape inside main blocks for steady-state cardio. Without this,
+        # the `continuous:` word and the `total`/`zone` body leak out as three
+        # spurious simple activities ("Continuous", "Total", "Zone").
+        if inline_cardio_ahead?(state) do
+          parse_named_inline_cardio(name, state)
+        else
+          # Simple activity without parameters
+          # Check for inline duration like "2m"
+          {duration, state} = parse_optional_inline_duration(state)
 
-        simple = %AST.SimpleActivity{
-          name: name,
-          duration: duration,
-          params: nil
-        }
+          simple = %AST.SimpleActivity{
+            name: name,
+            duration: duration,
+            params: nil
+          }
 
-        {:ok, simple, state}
+          {:ok, simple, state}
+        end
     end
+  end
+
+  # Cardio-type words that can follow a modality to introduce an inline cardio
+  # block (`brisk_walk continuous:`). Matched as bare_word or keyword.
+  @inline_cardio_types ~w(continuous intervals fartlek)
+
+  defp inline_cardio_ahead?(state) do
+    case {current_token(state), peek_token(state, 1)} do
+      {{tag, ct, _}, {:colon, _, _}}
+      when tag in [:bare_word, :keyword] and ct in @inline_cardio_types ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  # Parse `<cardio_type>:` + indented body into an AST.Cardio, with the modality
+  # supplied by the caller (already consumed). Mirrors parse_cardio_activity's
+  # tail (which consumes a leading `cardio` keyword and the modality itself).
+  defp parse_named_inline_cardio(modality, state) do
+    {_tag, cardio_type, _} = current_token(state)
+    state = advance(state)
+    state = expect_colon(state)
+    state = skip_newlines(state)
+
+    state =
+      case current_token(state) do
+        {:indent, _, _} -> advance(state)
+        _ -> state
+      end
+
+    {attrs, state} = parse_cardio_body(state, %{})
+
+    cardio_type_atom =
+      case cardio_type do
+        "intervals" -> :intervals
+        "fartlek" -> :fartlek
+        _ -> :continuous
+      end
+
+    intensity =
+      case {attrs[:intensity], attrs[:zone_model]} do
+        {nil, zone_model} when zone_model != nil ->
+          %AST.Intensity{
+            type: :heart_rate_zone,
+            value: attrs[:zone],
+            range: nil,
+            zone_model: zone_model
+          }
+
+        {intensity, zone_model} when intensity != nil and zone_model != nil ->
+          %{intensity | zone_model: zone_model}
+
+        {intensity, _} ->
+          intensity
+      end
+
+    cardio = %AST.Cardio{
+      modality: modality,
+      cardio_type: cardio_type_atom,
+      total_duration: attrs[:total_duration],
+      zone: attrs[:zone],
+      intensity: intensity,
+      intervals: attrs[:intervals]
+    }
+
+    {:ok, cardio, state}
   end
 
   defp parse_reps_spec(state) do

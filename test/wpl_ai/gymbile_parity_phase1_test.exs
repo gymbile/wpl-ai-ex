@@ -192,4 +192,72 @@ defmodule WplAi.GymbiParityPhase1Test do
       assert length(phases) > 1
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Battle-test regression: inline named cardio inside a main block.
+  #
+  # Subagents emit steady-state cardio as `<modality> continuous:` with an
+  # indented `total ... / zone ...` body inside a main straight_sets block.
+  # Previously the lib parsed `brisk_walk` as a bare simple activity and then
+  # leaked `continuous`, `total`, and `zone` out as three spurious simple
+  # activities ("Continuous", "Total", "Zone"). Must now compile to a single
+  # cardio activity that retains duration and zone.
+  # ---------------------------------------------------------------------------
+
+  describe "inline named cardio in main block" do
+    @inline_cardio_plan """
+    PLAN "Test Inline Cardio"
+    TYPE workout
+    LANGUAGE en
+
+    REQUIRES
+      AGE 40
+      FITNESS beginner
+
+    PHASES
+      PHASE "Foundation" (1 weeks):
+        WEEK 1:
+          DAY Saturday training 45m "Cardio":
+            warmup:
+              high_knees 5m
+            main straight_sets:
+              brisk_walk continuous:
+                total 30 minutes
+                zone 2
+    """
+
+    defp cardio_main_activities(doc) do
+      doc["plan"]["phases"]
+      |> hd()
+      |> get_in(["weeks"])
+      |> hd()
+      |> get_in(["days"])
+      |> hd()
+      |> get_in(["blocks"])
+      |> Enum.find(&(&1["type"] == "main"))
+      |> get_in(["activities"])
+    end
+
+    test "produces exactly one main activity (no spurious Continuous/Total/Zone)" do
+      assert {:ok, doc, _repairs} = WplAi.to_wpl(@inline_cardio_plan)
+      activities = cardio_main_activities(doc)
+      assert length(activities) == 1
+
+      names =
+        activities
+        |> Enum.map(&(&1["name"] || &1["exercise_ref"]))
+        |> Enum.map(&String.downcase/1)
+
+      refute Enum.any?(names, &(&1 in ["continuous", "total", "zone"]))
+    end
+
+    test "retains cardio duration and zone" do
+      assert {:ok, doc, _repairs} = WplAi.to_wpl(@inline_cardio_plan)
+      activity = doc |> cardio_main_activities() |> hd()
+
+      assert activity["type"] == "cardio"
+      assert get_in(activity, ["prescription", "duration", "value"]) == 30
+      assert get_in(activity, ["prescription", "intensity", "zone"]) == 2
+    end
+  end
 end
