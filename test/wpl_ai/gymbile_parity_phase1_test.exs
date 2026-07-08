@@ -151,45 +151,66 @@ defmodule WplAi.GymbiParityPhase1Test do
   # Corpus regression: the 3 gymbile fixtures that previously hard-errored
   # ---------------------------------------------------------------------------
 
+  # The corpus regression fixtures read from an ephemeral spike corpus that is
+  # not vendored into the repo. Skip gracefully when absent (e.g. in CI) — the
+  # same pattern used by gymbile_parity_phase1d_test.exs.
+  defp load_spike(filename) do
+    path = "/tmp/wplai_spike/#{filename}"
+    if File.exists?(path), do: {:ok, File.read!(path)}, else: :skip
+  end
+
   describe "corpus regression fixtures" do
     test "hybrid__43.wplai parses to 5 phases and 573 activities" do
-      content = File.read!("/tmp/wplai_spike/hybrid__43.wplai")
-      assert {:ok, doc, _repairs} = WplAi.to_wpl(content)
-      phases = doc["plan"]["phases"]
-      assert length(phases) == 5
+      case load_spike("hybrid__43.wplai") do
+        :skip ->
+          IO.puts("SKIP: /tmp/wplai_spike/hybrid__43.wplai not present")
 
-      total_activities =
-        Enum.sum(
-          Enum.map(phases, fn p ->
+        {:ok, content} ->
+          assert {:ok, doc, _repairs} = WplAi.to_wpl(content)
+          phases = doc["plan"]["phases"]
+          assert length(phases) == 5
+
+          total_activities =
             Enum.sum(
-              Enum.map(p["weeks"] || [], fn w ->
+              Enum.map(phases, fn p ->
                 Enum.sum(
-                  Enum.map(w["days"] || [], fn d ->
+                  Enum.map(p["weeks"] || [], fn w ->
                     Enum.sum(
-                      Enum.map(d["blocks"] || [], fn b -> length(b["activities"] || []) end)
+                      Enum.map(w["days"] || [], fn d ->
+                        Enum.sum(
+                          Enum.map(d["blocks"] || [], fn b -> length(b["activities"] || []) end)
+                        )
+                      end)
                     )
                   end)
                 )
               end)
             )
-          end)
-        )
 
-      assert total_activities == 573
+          assert total_activities == 573
+      end
     end
 
     test "hybrid__77.wplai parses to multiple phases" do
-      content = File.read!("/tmp/wplai_spike/hybrid__77.wplai")
-      assert {:ok, doc, _repairs} = WplAi.to_wpl(content)
-      phases = doc["plan"]["phases"]
-      assert length(phases) > 1
+      case load_spike("hybrid__77.wplai") do
+        :skip ->
+          IO.puts("SKIP: /tmp/wplai_spike/hybrid__77.wplai not present")
+
+        {:ok, content} ->
+          assert {:ok, doc, _repairs} = WplAi.to_wpl(content)
+          assert length(doc["plan"]["phases"]) > 1
+      end
     end
 
     test "nutrition__110.wplai parses to multiple phases" do
-      content = File.read!("/tmp/wplai_spike/nutrition__110.wplai")
-      assert {:ok, doc, _repairs} = WplAi.to_wpl(content)
-      phases = doc["plan"]["phases"]
-      assert length(phases) > 1
+      case load_spike("nutrition__110.wplai") do
+        :skip ->
+          IO.puts("SKIP: /tmp/wplai_spike/nutrition__110.wplai not present")
+
+        {:ok, content} ->
+          assert {:ok, doc, _repairs} = WplAi.to_wpl(content)
+          assert length(doc["plan"]["phases"]) > 1
+      end
     end
   end
 
