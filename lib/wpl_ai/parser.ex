@@ -2650,8 +2650,8 @@ defmodule WplAi.Parser do
   # prescriptions emitted by LLMs ("running 1x60 rpe 5 rest 90 seconds").
   # Accept them silently — the WPL JSON schema permits exercise_ref as a
   # free string, and the semantic validator can flag unsupported usage.
-  @cardio_modality_set ~w(running walking cycling rowing elliptical swimming
-    jump_rope hiking)
+  @cardio_modality_set ~w(running walking jogging cycling rowing elliptical swimming
+    jump_rope hiking biking spinning)
 
   # Two-tier exercise-ref resolution (commit 2137782).
   #
@@ -2896,6 +2896,12 @@ defmodule WplAi.Parser do
   # behaviour around terminal `s` (parsed as a separate simple activity) is preserved.
   @reps_modifier_follow ~w(rpe rir rest tempo weight name to_failure bodyweight)
 
+  # Rep-count qualifiers that appear between reps and the first modifier keyword
+  # (e.g. `side_plank 3x20 seconds each side`). Must be defined before
+  # check_reps_unit_follow which references it in a guard.
+  @reps_qualifier_words ~w(each per side sides leg legs arm arms both left right
+    each_side each_leg per_side per_leg each_arm per_arm)
+
   # Consume a trailing `s`/`m` or long-form `seconds`/`minutes`/`hours` after a
   # reps number, but only when the next token after the unit is a known modifier
   # keyword. This prevents the unit from leaking into block-body parsing.
@@ -2921,11 +2927,25 @@ defmodule WplAi.Parser do
         {:keyword, kw, _} when kw in @reps_modifier_follow ->
           advance(state)
 
+        # Exercise qualifiers ("each", "side", "per", "leg", …) follow the
+        # reps spec in patterns like `side_plank 3x20 seconds each side`.
+        # Without this, the unit token leaks and becomes a spurious simple
+        # activity ("Seconds") — skip_exercise_qualifiers then handles the
+        # qualifier words themselves.
+        {tag, kw, _} when tag in [:bare_word, :keyword] and kw in @reps_qualifier_words ->
+          advance(state)
+
+        # End-of-exercise-line: the unit is the last token before newline/dedent/eof
+        # (e.g. `plank 3x20s` with nothing after). Consume the unit in this case
+        # too — the reps number with a time suffix is self-contained.
+        {sentinel, _, _} when sentinel in [:newline, :dedent, :eof] ->
+          advance(state)
+
         _ ->
           state
       end
     else
-      state
+      advance(state)
     end
   end
 
@@ -2973,7 +2993,8 @@ defmodule WplAi.Parser do
   # because they're in the grammar's unit list) are accepted. We currently
   # don't carry the unit in the rep target tuple; the intent captured by
   # the judge and UI is the number.
-  @target_units ~w(kg lbs reps sec seconds m min percentage_1rm)
+  # "s" covers the short suffix in `plank 3x30 target 30s rpe 6 rest 60 seconds`.
+  @target_units ~w(s kg lbs reps sec seconds m min percentage_1rm)
   defp skip_optional_target_unit(state) do
     case current_token(state) do
       {tag, unit, _} when tag in [:bare_word, :keyword] and unit in @target_units ->
@@ -2990,7 +3011,8 @@ defmodule WplAi.Parser do
   # Without this, the trailing bare_words leaked out of parse_reps_spec,
   # parse_block_body saw them as new exercises, and the UI showed phantom
   # "each", "side", "per", "leg" items beside real exercises.
-  @exercise_qualifiers ~w(each per side sides leg legs arm arms both left right)
+  @exercise_qualifiers ~w(each per side sides leg legs arm arms both left right
+    each_side each_leg per_side per_leg each_arm per_arm)
 
   @muscle_groups ~w(chest upper_back lats traps front_delts side_delts rear_delts
     biceps triceps forearms abs obliques lower_back spinal_erectors
@@ -3319,13 +3341,18 @@ defmodule WplAi.Parser do
   @time_unit_tokens ~w(s m h sec min seconds minutes hours)
 
   defp cooldown_cardio_pattern?(state) do
-    # pos 0: bare_word (modality)
+    # pos 0: bare_word that is a known cardio modality (e.g. jogging, walking)
     # pos 1: number
     # pos 2: bare_word matching a time unit
     # pos 3: newline/dedent/eof (nothing else on the line)
-    case {peek_token(state, 1), peek_token(state, 2), peek_token(state, 3)} do
-      {{:number, _, _}, {tag2, unit, _}, {sentinel, _, _}}
-      when tag2 in [:bare_word, :keyword] and unit in @time_unit_tokens and
+    #
+    # Restricted to @cardio_modality_set to avoid matching recovery exercises
+    # like `breathing_4_7_8 30s` which share the same syntactic shape but
+    # should compile as recovery_exercise, not cardio.
+    case {current_token(state), peek_token(state, 1), peek_token(state, 2), peek_token(state, 3)} do
+      {{cur_tag, name, _}, {:number, _, _}, {tag2, unit, _}, {sentinel, _, _}}
+      when cur_tag in [:bare_word, :keyword] and name in @cardio_modality_set and
+             tag2 in [:bare_word, :keyword] and unit in @time_unit_tokens and
              sentinel in [:newline, :dedent, :eof] ->
         true
 
@@ -3970,6 +3997,12 @@ defmodule WplAi.Parser do
             end
 
           {side_atom, state}
+
+        # Handle bare `both`/`left`/`right` without the `sides` keyword
+        # (e.g. `breathing_4_7_8 30s x1 both`). Without this the token leaks
+        # into parse_block_body and becomes a spurious recovery_exercise named "both".
+        {tag, side, _} when tag in [:keyword, :bare_word] and side in ["both", "left", "right"] ->
+          {String.to_atom(side), advance(state)}
 
         _ ->
           {nil, state}

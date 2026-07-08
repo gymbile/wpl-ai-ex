@@ -11,6 +11,39 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **1d-parity-A1** Time-unit suffix (`seconds`, `minutes`) after a reps number is now
+  consumed when the following token is an exercise qualifier (`each`, `side`, `each_side`,
+  `per`, `leg`, etc.). Pattern: `side_plank 3x20 seconds each side`. Previously `seconds`
+  leaked into `parse_block_body` and became a spurious `simple` activity named "Seconds",
+  followed by "Each" and "Side".
+- **1d-parity-A2** Short `s` suffix added to `@target_units`. Pattern:
+  `plank 3x30 target 30s rpe 6 rest 30 seconds` — the `s` after the target value is now
+  consumed so it no longer becomes a spurious `s` simple activity.
+- **1d-parity-A3** Time-unit suffix at end-of-line (followed by newline / dedent / eof) is
+  now consumed. Pattern: `plank 3x20s` with nothing following. Previously the `s` leaked
+  and produced a spurious "S" simple activity.
+- **1d-parity-A4** Compound qualifier tokens (`each_side`, `each_leg`, `per_side`,
+  `per_leg`, `each_arm`, `per_arm`) added to `@exercise_qualifiers` and `@reps_qualifier_words`.
+  Pattern: `dead_bug 3x10 each_side` — the fused token no longer leaks as a spurious "Each
+  Side" simple activity.
+- **1d-parity-B1** `cooldown_cardio_pattern?` restricted to known cardio modality names
+  (`running`, `walking`, `jogging`, `cycling`, `rowing`, `elliptical`, `swimming`,
+  `jump_rope`, `hiking`, `biking`, `spinning`). Previously it triggered for any bare-word
+  name matching `<name> <number> <time_unit> <EOL>`, so `breathing_4_7_8 30s` in a cooldown
+  block was compiled as a `cardio` activity instead of `recovery_exercise`.
+- **1d-parity-B2** Bare `both`/`left`/`right` token after reps in `parse_recovery_exercise`
+  is now consumed even when the `sides` keyword is absent. Pattern:
+  `breathing_4_7_8 30s x1 both`. Previously `both` leaked and was parsed as a spurious
+  `recovery_exercise` named "both".
+- Conformance fixtures `exercise/tabata-block` and `exercise/time-prescription` updated to
+  remove spurious "S" simple activities that the above fixes eliminate.
+
+### Added
+
+- Regression test module `WplAi.GymbiParityPhase1dTest` (12 tests) covering all 6 corpus
+  cases that differed from gymbile's reference compiler (hybrid__112, __119, __26, __66,
+  __93, __94) and the parser-level unit patterns behind each root cause.
+
 - **1d-equipment** Inline `EQUIPMENT name1 name2 ...` form (no colon, no indented block)
   in `REQUIRES` is now parsed as a space-separated list of required equipment entries.
   Previously this caused a desync that consumed `PERSONALIZATION` as an unknown REQUIRES
