@@ -594,47 +594,77 @@ defmodule WplAi.Parser do
   defp parse_requires_body(state, attrs) do
     state = skip_newlines(state)
 
+    # 1b: Normalize the keyword to lowercase before dispatch so LLMs that emit
+    # uppercase directives ("AGE 18..60", "FITNESS beginner") are accepted.
+    # The argument VALUES are NOT downcased — only the directive keyword.
     case current_token(state) do
-      {:keyword, "age", _} ->
-        state = advance(state)
-        {:ok, min_age, state} = expect_number(state)
-        state = expect_range(state)
-        {:ok, max_age, state} = expect_number(state)
-        parse_requires_body(state, Map.put(attrs, :age_range, {trunc(min_age), trunc(max_age)}))
+      {tag, raw_kw, loc} when tag in [:keyword, :bare_word] ->
+        case String.downcase(raw_kw) do
+          "age" ->
+            state = advance(state)
+            {:ok, min_age, state} = expect_number(state)
 
-      {:keyword, "fitness", _} ->
-        state = advance(state)
-        {:ok, levels, state} = parse_enum_list(state)
-        parse_requires_body(state, Map.put(attrs, :fitness_levels, levels))
+            # Tolerate single-number form "AGE 45" as well as range "AGE 18..60".
+            {max_age, state} =
+              case current_token(state) do
+                {:range, _, _} ->
+                  state = advance(state)
+                  {:ok, max_age, state} = expect_number(state)
+                  {max_age, state}
 
-      {:keyword, "equipment", _} ->
-        state = advance(state)
-        state = expect_colon(state)
-        state = skip_newlines(state)
-        state = expect_indent(state)
-        {:ok, equipment, state} = parse_equipment_list(state, [])
-        parse_requires_body(state, Map.put(attrs, :equipment, equipment))
+                _ ->
+                  {min_age, state}
+              end
 
-      {:keyword, "contraindication", _} ->
-        {:ok, contra, state} = parse_contraindication(state)
-        contras = Map.get(attrs, :contraindications, [])
-        parse_requires_body(state, Map.put(attrs, :contraindications, contras ++ [contra]))
+            parse_requires_body(
+              state,
+              Map.put(attrs, :age_range, {trunc(min_age), trunc(max_age)})
+            )
 
-      {:keyword, "time", _} ->
-        state = advance(state)
-        state = expect_colon(state)
-        state = skip_newlines(state)
-        state = expect_indent(state)
-        {:ok, time_commitment, state} = parse_time_commitment(state)
-        parse_requires_body(state, Map.put(attrs, :time_commitment, time_commitment))
+          "fitness" ->
+            state = advance(state)
+            {:ok, levels, state} = parse_enum_list(state)
+            parse_requires_body(state, Map.put(attrs, :fitness_levels, levels))
+
+          "equipment" ->
+            state = advance(state)
+            state = expect_colon(state)
+            state = skip_newlines(state)
+            state = expect_indent(state)
+            {:ok, equipment, state} = parse_equipment_list(state, [])
+            parse_requires_body(state, Map.put(attrs, :equipment, equipment))
+
+          "contraindication" ->
+            {:ok, contra, state} = parse_contraindication(state)
+            contras = Map.get(attrs, :contraindications, [])
+            parse_requires_body(state, Map.put(attrs, :contraindications, contras ++ [contra]))
+
+          "time" ->
+            state = advance(state)
+            state = expect_colon(state)
+            state = skip_newlines(state)
+            state = expect_indent(state)
+            {:ok, time_commitment, state} = parse_time_commitment(state)
+            parse_requires_body(state, Map.put(attrs, :time_commitment, time_commitment))
+
+          _ ->
+            {line_text, state} = collect_line_tokens(state)
+
+            error =
+              ParseError.invalid_structure(
+                "Unknown REQUIRES directive: '#{line_text}'. " <>
+                  "Recognized: contraindication, fitness, equipment, age, time_commitment.",
+                loc
+              )
+
+            state = %{state | errors: [error | state.errors]}
+            parse_requires_body(state, attrs)
+        end
 
       {:dedent, _, _} ->
         state = advance(state)
         {attrs, state}
 
-      # Bug 4 fix: emit an explicit parse error for unknown REQUIRES directives.
-      # Collect all tokens up to the next newline/dedent as the "line text",
-      # emit an invalid_structure error, and continue parsing the block.
       _ ->
         {line_text, state} = collect_line_tokens(state)
         loc = current_location(state)

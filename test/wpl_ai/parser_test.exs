@@ -642,4 +642,70 @@ defmodule WplAi.ParserTest do
       assert hd(equipment).required == true
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Phase 1b — REQUIRES directive case-leniency
+  # ---------------------------------------------------------------------------
+
+  describe "parse/1 - REQUIRES directive case-insensitive dispatch (1b)" do
+    test "lowercase age directive parses normally" do
+      source = ~S"""
+      PLAN "Test"
+      TYPE workout
+      REQUIRES
+        age 18..60
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      assert doc.requirements.age_range == {18, 60}
+    end
+
+    test "uppercase AGE directive is accepted and parsed" do
+      source = ~S"""
+      PLAN "Test"
+      TYPE workout
+      REQUIRES
+        AGE 25..50
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      assert doc.requirements.age_range == {25, 50}
+    end
+
+    test "uppercase AGE with single number (no range) is tolerated" do
+      source = ~S"""
+      PLAN "Test"
+      TYPE workout
+      REQUIRES
+        AGE 45
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      assert doc.requirements.age_range == {45, 45}
+    end
+
+    test "lowercase fitness directive parses normally" do
+      source = ~S"""
+      PLAN "Test"
+      TYPE workout
+      REQUIRES
+        fitness beginner intermediate
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      assert doc.requirements.fitness_levels == ["beginner", "intermediate"]
+    end
+
+    test "uppercase FITNESS directive is accepted" do
+      source = ~S"""
+      PLAN "Test"
+      TYPE workout
+      REQUIRES
+        FITNESS beginner
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      assert doc.requirements.fitness_levels == ["beginner"]
+    end
+  end
 end
