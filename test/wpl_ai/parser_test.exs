@@ -708,4 +708,114 @@ defmodule WplAi.ParserTest do
       assert doc.requirements.fitness_levels == ["beginner"]
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Phase 1c — meals block multi-entry parsing
+  # ---------------------------------------------------------------------------
+
+  describe "parse/1 - meals block multi-entry parsing (1c)" do
+    # Builds a minimal plan source with the given meals_lines appended under
+    # a single nutrition DAY so we can test the meal parser in isolation.
+    defp meals_source(meals_lines) do
+      header = "PLAN \"Hybrid Plan\"\nTYPE hybrid\n\n"
+      phases = "PHASES\n  PHASE \"P1\" (1 weeks):\n    WEEK 1:\n"
+      day = "      DAY Monday nutrition 0m \"Label\":\n        meals:\n"
+      header <> phases <> day <> meals_lines
+    end
+
+    test "all four MEAL entries in a nutrition day are parsed" do
+      meals =
+        "          MEAL BREAKFAST: oats\n" <>
+          "            PROTEIN 18g\n" <>
+          "          MEAL LUNCH: salad\n" <>
+          "            PROTEIN 30g\n" <>
+          "          MEAL SNACK: apple\n" <>
+          "          MEAL DINNER: chicken\n" <>
+          "            PROTEIN 45g\n"
+
+      assert {:ok, doc, _repairs} = Parser.parse(meals_source(meals))
+      day = doc.phases |> hd() |> Map.get(:weeks) |> hd() |> Map.get(:days) |> hd()
+      block = day.blocks |> hd()
+      assert length(block.activities) == 4
+    end
+
+    test "range macros like PROTEIN 10..15g are parsed without truncating remaining MEALs" do
+      meals =
+        "          MEAL BREAKFAST: oats\n" <>
+          "            PROTEIN 10..15g\n" <>
+          "            CARBS 40..60g\n" <>
+          "          MEAL LUNCH: salad\n" <>
+          "            PROTEIN 25g\n"
+
+      assert {:ok, doc, _repairs} = Parser.parse(meals_source(meals))
+      day = doc.phases |> hd() |> Map.get(:weeks) |> hd() |> Map.get(:days) |> hd()
+      block = day.blocks |> hd()
+      assert length(block.activities) == 2
+      breakfast = block.activities |> hd()
+      assert breakfast.macros.protein == {10, 15, "g"}
+      assert breakfast.macros.carbs == {40, 60, "g"}
+    end
+
+    test "unknown macro keyword (typo) is skipped and remaining MEALs still parse" do
+      meals =
+        "          MEAL BREAKFAST: oats\n" <>
+          "            PROTEAM 18g\n" <>
+          "          MEAL LUNCH: salad\n" <>
+          "            PROTEIN 30g\n"
+
+      assert {:ok, doc, _repairs} = Parser.parse(meals_source(meals))
+      day = doc.phases |> hd() |> Map.get(:weeks) |> hd() |> Map.get(:days) |> hd()
+      block = day.blocks |> hd()
+      assert length(block.activities) == 2
+    end
+
+    test "multi-week plan preserves meals from each week independently" do
+      source =
+        "PLAN \"Multi-Week\"\nTYPE hybrid\n\n" <>
+          "PHASES\n  PHASE \"P1\" (2 weeks):\n" <>
+          "    WEEK 1:\n" <>
+          "      DAY Monday nutrition 0m \"Label\":\n" <>
+          "        meals:\n" <>
+          "          MEAL BREAKFAST: oats\n" <>
+          "          MEAL LUNCH: salad\n" <>
+          "    WEEK 2:\n" <>
+          "      DAY Monday nutrition 0m \"Label\":\n" <>
+          "        meals:\n" <>
+          "          MEAL BREAKFAST: eggs\n" <>
+          "          MEAL LUNCH: wrap\n" <>
+          "          MEAL DINNER: fish\n"
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      [week1, week2] = doc.phases |> hd() |> Map.get(:weeks)
+      day1 = week1.days |> hd()
+      day2 = week2.days |> hd()
+      assert length(hd(day1.blocks).activities) == 2
+      assert length(hd(day2.blocks).activities) == 3
+    end
+
+    test "multi-phase plan with range macros parses both phases" do
+      source =
+        "PLAN \"Two Phases\"\nTYPE hybrid\n\n" <>
+          "PHASES\n" <>
+          "  PHASE \"P1\" (1 weeks):\n" <>
+          "    WEEK 1:\n" <>
+          "      DAY Monday nutrition 0m \"Label\":\n" <>
+          "        meals:\n" <>
+          "          MEAL BREAKFAST: oats\n" <>
+          "            PROTEIN 10..15g\n" <>
+          "  PHASE \"P2\" (1 weeks):\n" <>
+          "    WEEK 1:\n" <>
+          "      DAY Monday nutrition 0m \"Label\":\n" <>
+          "        meals:\n" <>
+          "          MEAL BREAKFAST: eggs\n" <>
+          "          MEAL LUNCH: salad\n"
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      assert length(doc.phases) == 2
+      p1_day = doc.phases |> hd() |> Map.get(:weeks) |> hd() |> Map.get(:days) |> hd()
+      p2_day = doc.phases |> List.last() |> Map.get(:weeks) |> hd() |> Map.get(:days) |> hd()
+      assert length(hd(p1_day.blocks).activities) == 1
+      assert length(hd(p2_day.blocks).activities) == 2
+    end
+  end
 end

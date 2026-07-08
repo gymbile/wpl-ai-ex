@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-07-08
+
+### Fixed
+
+- **1a** Equipment list now accepts `:keyword` tokens in addition to `:bare_word`,
+  so names that collide with reserved words (e.g. `bodyweight`) parse correctly.
+- **1b** `REQUIRES` directive dispatch is now case-insensitive: uppercase forms
+  (`AGE`, `FITNESS`) produced by some LLMs are accepted without an error. Single-
+  number age (`AGE 45`) is also tolerated (treated as `{45, 45}`).
+- **1c** Meal block parser hardened against desync caused by range macros
+  (`PROTEIN 10..15g`) and unknown/typo macro keywords (`PROTEAM`): both are now
+  drained token-by-token so subsequent `MEAL` entries are not truncated.
+  `parse_meal_body` and `parse_meal_entries` both gain `:eof` and structural
+  keyword hard-stop clauses.
+
 ## [2.1.2] — 2026-07-07
 
 ### Added

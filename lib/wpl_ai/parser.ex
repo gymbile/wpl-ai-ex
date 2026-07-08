@@ -2212,8 +2212,17 @@ defmodule WplAi.Parser do
       {:dedent, _, _} ->
         {Enum.reverse(acc), advance(state)}
 
-      _ ->
+      {:eof, _, _} ->
         {Enum.reverse(acc), state}
+
+      # Hard stop: outer structural keywords mean we've left the meals block.
+      {:keyword, outer, _} when outer in ["DAY", "WEEK", "PHASE"] ->
+        {Enum.reverse(acc), state}
+
+      # ponytail: tolerant recovery — skip unrecognised tokens rather than
+      # halting the list, so a stray token cannot truncate remaining MEALs.
+      _ ->
+        parse_meal_entries(advance(state), acc)
     end
   end
 
@@ -2247,30 +2256,59 @@ defmodule WplAi.Parser do
   # `CALORIES 400kcal`. Lexer tokenises each number as :number and the unit
   # suffix as :bare_word (both for single-char `g` and multi-char `kcal`),
   # so consuming one optional bare_word after the number is enough.
+  # Range form `PROTEIN 10..15g` is also tolerated (gymbile LLM output).
   defp parse_meal_body(state, attrs) do
     state = skip_newlines(state)
 
     case current_token(state) do
       {tag, name, _} when tag in [:keyword, :bare_word] and name in ["PROTEIN", "CARBS", "FAT"] ->
         state = advance(state)
-        {:ok, grams, state} = expect_number(state)
+        {:ok, low, state} = expect_number(state)
+        {high, state} = consume_optional_range_high(state)
+        high = if is_nil(high), do: low, else: high
         state = skip_optional_bare_word(state)
         macros = Map.get(attrs, :macros) || %AST.Macros{}
         key = meal_macro_key(name)
-        macros = Map.put(macros, key, {grams, grams, "g"})
+        macros = Map.put(macros, key, {trunc(low), trunc(high), "g"})
         parse_meal_body(state, Map.put(attrs, :macros, macros))
 
       {tag, "CALORIES", _} when tag in [:keyword, :bare_word] ->
         state = advance(state)
-        {:ok, kcal, state} = expect_number(state)
+        {:ok, low, state} = expect_number(state)
+        {high, state} = consume_optional_range_high(state)
+        high = if is_nil(high), do: low, else: high
         state = skip_optional_bare_word(state)
-        parse_meal_body(state, Map.put(attrs, :calories, {kcal, kcal, "kcal"}))
+        parse_meal_body(state, Map.put(attrs, :calories, {trunc(low), trunc(high), "kcal"}))
 
       {:dedent, _, _} ->
         {attrs, advance(state)}
 
-      _ ->
+      {:eof, _, _} ->
         {attrs, state}
+
+      # Hard stop: outer structural keywords mean we've left the meal body.
+      {:keyword, outer, _} when outer in ["DAY", "WEEK", "PHASE", "MEAL"] ->
+        {attrs, state}
+
+      # ponytail: drain unknown macro keywords (FIBER, SUGAR, typos) token-by-token
+      # instead of returning immediately, which would leave tokens in the stream
+      # and cause parse_meal_entries to desync.
+      _ ->
+        parse_meal_body(advance(state), attrs)
+    end
+  end
+
+  # Consume the `..` range token and the following number, returning {high, state}.
+  # Returns {nil, state} if the next token is not a range.
+  defp consume_optional_range_high(state) do
+    case current_token(state) do
+      {:range, _, _} ->
+        state = advance(state)
+        {:ok, high, state} = expect_number(state)
+        {high, state}
+
+      _ ->
+        {nil, state}
     end
   end
 
