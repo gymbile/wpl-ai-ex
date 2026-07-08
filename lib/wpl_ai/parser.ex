@@ -628,10 +628,42 @@ defmodule WplAi.Parser do
 
           "equipment" ->
             state = advance(state)
-            state = expect_colon(state)
-            state = skip_newlines(state)
-            state = expect_indent(state)
-            {:ok, equipment, state} = parse_equipment_list(state, [])
+
+            # ponytail: detect inline form "EQUIPMENT name1 name2 ..." vs block form
+            # "equipment:\n  name (required)". If the next token is NOT a colon, treat
+            # the rest of the line as a space-separated bare list (required: true, no alts).
+            {equipment, state} =
+              case current_token(state) do
+                {:colon, _, _} ->
+                  state = expect_colon(state)
+                  state = skip_newlines(state)
+
+                  # Only enter the indented block if the indent is actually there.
+                  # An empty "equipment:\n" (no indent follows) yields an empty list.
+                  case current_token(state) do
+                    {:indent, _, _} ->
+                      state = advance(state)
+                      {:ok, equip, state} = parse_equipment_list(state, [])
+                      {equip, state}
+
+                    _ ->
+                      {[], state}
+                  end
+
+                _ ->
+                  # Inline form: consume tokens until newline/dedent/eof as names.
+                  {equip, state} = parse_inline_equipment_list(state, [])
+
+                  state =
+                    add_repair(state, %{
+                      type: :normalized_inline_equipment,
+                      message:
+                        "Inline EQUIPMENT list normalized to structured form (#{length(equip)} items)"
+                    })
+
+                  {equip, state}
+              end
+
             parse_requires_body(state, Map.put(attrs, :equipment, equipment))
 
           "contraindication" ->
@@ -725,6 +757,19 @@ defmodule WplAi.Parser do
 
       _ ->
         {:ok, Enum.reverse(equipment), state}
+    end
+  end
+
+  # Inline equipment: "EQUIPMENT name1 name2 name3" (no colon, no indent block).
+  # Each token on the same line becomes a required Equipment entry with no alternatives.
+  defp parse_inline_equipment_list(state, acc) do
+    case current_token(state) do
+      {tok, name, _} when tok in [:bare_word, :keyword] ->
+        equip = %AST.Equipment{name: name, required: true, alternatives: nil}
+        parse_inline_equipment_list(advance(state), [equip | acc])
+
+      _ ->
+        {Enum.reverse(acc), state}
     end
   end
 
@@ -1261,6 +1306,21 @@ defmodule WplAi.Parser do
         state = expect_indent(state)
         {:ok, new_rules, state} = parse_rules(state, [])
         parse_personalization_body(state, inputs, rules ++ new_rules)
+
+      # Freeform "RULE when ...: ..." lines emitted directly inside PERSONALIZATION
+      # (no enclosing RULES: block). Drain the line and continue rather than
+      # exiting early and letting the tokens cascade into parse_sections.
+      {:keyword, "RULE", _} ->
+        {line, state} = collect_line_tokens(state, [])
+
+        state =
+          add_repair(state, %{
+            type: :skipped_rule,
+            raw: line,
+            message: "Freeform RULE line skipped (not structured WHEN condition): \"#{line}\""
+          })
+
+        parse_personalization_body(state, inputs, rules)
 
       {:dedent, _, _} ->
         state = advance(state)

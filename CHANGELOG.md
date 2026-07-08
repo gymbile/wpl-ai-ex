@@ -11,6 +11,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **1d-equipment** Inline `EQUIPMENT name1 name2 ...` form (no colon, no indented block)
+  in `REQUIRES` is now parsed as a space-separated list of required equipment entries.
+  Previously this caused a desync that consumed `PERSONALIZATION` as an unknown REQUIRES
+  directive and cascaded to a full parse failure. A `normalized_inline_equipment` repair
+  is emitted.
+- **1d-equipment** Empty `equipment:` block (colon present, no indented entries below)
+  in `REQUIRES` no longer greedily consumes the following section as equipment names.
+  The parser now checks for the `{:indent, ...}` token before entering the block.
+- **1d-rules** Freeform `RULE when ...: ...` lines emitted directly inside
+  `PERSONALIZATION` (without an enclosing `RULES:` block) are now drained
+  token-by-token with a `skipped_rule` repair instead of exiting the personalization
+  body early and letting the tokens cascade into `parse_sections`.
 - **1a** Equipment list now accepts `:keyword` tokens in addition to `:bare_word`,
   so names that collide with reserved words (e.g. `bodyweight`) parse correctly.
 - **1b** `REQUIRES` directive dispatch is now case-insensitive: uppercase forms
