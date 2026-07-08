@@ -11,6 +11,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- **inline named cardio** `<modality> continuous:` (also `intervals:`/`fartlek:`) with an
+  indented `total … / zone …` body inside a main block now compiles to a single `cardio`
+  activity retaining duration and zone. Previously `brisk_walk continuous:` produced three
+  spurious `simple` activities ("Continuous", "Total", "Zone"). Found via end-to-end
+  battle-test of the lib inside gymbile's real pipeline.
 - **1d-parity-A1** Time-unit suffix (`seconds`, `minutes`) after a reps number is now
   consumed when the following token is an exercise qualifier (`each`, `side`, `each_side`,
   `per`, `leg`, etc.). Pattern: `side_plank 3x20 seconds each side`. Previously `seconds`
