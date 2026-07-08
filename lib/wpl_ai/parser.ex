@@ -675,7 +675,9 @@ defmodule WplAi.Parser do
     state = skip_newlines(state)
 
     case current_token(state) do
-      {:bare_word, name, _} ->
+      # Equipment names may collide with reserved keywords (e.g. "bodyweight"),
+      # which the lexer tokenizes as :keyword. Accept both so those names parse.
+      {tok, name, _} when tok in [:bare_word, :keyword] ->
         state = advance(state)
         {:ok, flags, state} = parse_equipment_flags(state)
 

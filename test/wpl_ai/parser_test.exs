@@ -620,4 +620,26 @@ defmodule WplAi.ParserTest do
       assert contra.action == :exclude
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Phase 1a — equipment keyword fix (1b back-port)
+  # ---------------------------------------------------------------------------
+
+  describe "parse/1 - REQUIRES equipment with keyword names (1a)" do
+    test "bodyweight as keyword in equipment list is accepted" do
+      source = ~S"""
+      PLAN "Bodyweight Plan"
+      TYPE workout
+      REQUIRES
+        equipment:
+          bodyweight (required)
+      """
+
+      assert {:ok, doc, _repairs} = Parser.parse(source)
+      equipment = doc.requirements.equipment
+      assert length(equipment) == 1
+      assert hd(equipment).name == "bodyweight"
+      assert hd(equipment).required == true
+    end
+  end
 end
